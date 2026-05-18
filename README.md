@@ -25,7 +25,7 @@ Funds stay in a ZeroDev Kernel smart account that only you control. The MCP serv
 ```
 Please help me install the Genome Auto-Bid MCP Server. Here is what needs to happen — figure out the right commands and paths for my system:
 
-1. Clone https://github.com/insevm/Genome-MCP-Server.git to a suitable local directory and run `npm install` inside it.
+1. Clone https://github.com/insevm/Genome-MCP-Server.git to skill local directory and run `npm install` inside it.
 
 2. Run the interactive setup wizard: `npx genome-bid-mcp setup`
    The wizard will ask for a ZeroDev Project ID (free at https://dashboard.zerodev.app), Ethereum mainnet HTTP and WebSocket RPC URLs, a max bid cap in ETH, session key validity in days, and an encryption password. It then opens a browser page — I will complete the MetaMask authorization step myself.
@@ -54,12 +54,12 @@ If you hit any errors, share the exact message and I will help troubleshoot.
 
 ### Prerequisites
 
-| Requirement | Details |
-|-------------|---------|
-| Node.js | 20 or later |
-| MetaMask | Installed in your browser |
-| Ethereum RPC | HTTP + WebSocket URLs from Alchemy or Infura |
-| ZeroDev | Free project at [dashboard.zerodev.app](https://dashboard.zerodev.app) — grab the Project ID |
+| Requirement  | Details                                                                                      |
+| ------------ | -------------------------------------------------------------------------------------------- |
+| Node.js      | 20 or later                                                                                  |
+| MetaMask     | Installed in your browser                                                                    |
+| Ethereum RPC | HTTP + WebSocket URLs from Alchemy or Infura                                                 |
+| ZeroDev      | Free project at [dashboard.zerodev.app](https://dashboard.zerodev.app) — grab the Project ID |
 
 ### Step 1 — Install
 
@@ -294,8 +294,8 @@ No. The Genome contract fixes the deadline at `lastMintBlock + 104` blocks (~20 
 
 ## Local Data
 
-| File | Contents |
-|------|----------|
-| `~/.genome-bid/session.key` | AES-GCM encrypted session key |
-| `~/.genome-bid/config.json` | Account config (no secrets) |
+| File                          | Contents                              |
+| ----------------------------- | ------------------------------------- |
+| `~/.genome-bid/session.key`   | AES-GCM encrypted session key         |
+| `~/.genome-bid/config.json`   | Account config (no secrets)           |
 | `~/.genome-bid/history.jsonl` | Bid history, one JSON record per line |
