@@ -161,6 +161,12 @@ Snipe the Genome auction in the final seconds, up to 0.35 ETH
 
 > Snipe mode fires in the last block before the deadline (~12 seconds on Ethereum), using 5× priority fee and Flashbots Protect to prevent MEV frontrunning.
 
+### Inspect snipe watcher status
+
+```
+Show my current Genome snipe status
+```
+
 ### Run monitoring and snipe together
 
 ```

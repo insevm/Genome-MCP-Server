@@ -18,9 +18,16 @@ interface BidderState {
     watching: boolean
     config: SnipeConfig | null
     unwatch: (() => void) | null
-    status: 'watching' | 'fired' | 'won' | 'failed'
+    transport: 'websocket' | 'http-polling' | null
+    status: 'idle' | 'watching' | 'fired' | 'won' | 'failed'
     txHash: string | undefined
     triggeredAtBlock: number | undefined
+    triggeredAt: string | undefined
+    lastCheckedAt: string | undefined
+    lastObservedAuction: AuctionStatus | undefined
+    nextBidEth: string | undefined
+    lastDecision: string
+    stopReason: string | undefined
     lastError: string | undefined
   }
 }
@@ -38,9 +45,16 @@ const state: BidderState = {
     watching: false,
     config: null,
     unwatch: null,
-    status: 'watching',
+    transport: null,
+    status: 'idle',
     txHash: undefined,
     triggeredAtBlock: undefined,
+    triggeredAt: undefined,
+    lastCheckedAt: undefined,
+    lastObservedAuction: undefined,
+    nextBidEth: undefined,
+    lastDecision: 'not started',
+    stopReason: undefined,
     lastError: undefined,
   },
 }
@@ -195,14 +209,21 @@ export function startSnipe(cfg: SnipeConfig): { ok: boolean; message: string } {
   if (!state.privateKey || !state.appConfig)
     return { ok: false, message: 'bidder not initialized' }
 
+  const config = state.appConfig
   state.snipe.watching = true
   state.snipe.config = cfg
+  state.snipe.transport = config.rpcWsUrl ? 'websocket' : 'http-polling'
   state.snipe.status = 'watching'
   state.snipe.txHash = undefined
   state.snipe.triggeredAtBlock = undefined
+  state.snipe.triggeredAt = undefined
+  state.snipe.lastCheckedAt = undefined
+  state.snipe.lastObservedAuction = undefined
+  state.snipe.nextBidEth = undefined
+  state.snipe.lastDecision = 'watching for trigger window'
+  state.snipe.stopReason = undefined
   state.snipe.lastError = undefined
 
-  const config = state.appConfig
   let inFlight = false
 
   const onBlock = async () => {
@@ -213,43 +234,66 @@ export function startSnipe(cfg: SnipeConfig): { ok: boolean; message: string } {
     inFlight = true
 
     try {
+      const checkedAt = new Date().toISOString()
       const status = await getAuctionStatus(state.appConfig, state.appConfig.walletAddress)
+      state.snipe.lastCheckedAt = checkedAt
+      state.snipe.lastObservedAuction = status
 
       if (status.blocksRemaining <= 0) {
         state.snipe.status = 'watching'
         state.snipe.txHash = undefined
         state.snipe.triggeredAtBlock = undefined
+        state.snipe.triggeredAt = undefined
+        state.snipe.nextBidEth = undefined
+        state.snipe.lastDecision = 'auction settled, waiting for next round'
         return
       }
 
+      const newBidWei = parseEther(status.topBid) + parseEther(state.appConfig.defaults.incrementEth)
+      const newBid = formatEther(newBidWei)
+      state.snipe.nextBidEth = newBid
+
       if (status.isUserWinning) {
         state.snipe.status = 'won'
+        state.snipe.lastDecision = `already winning at ${status.topBid} ETH`
+        state.snipe.stopReason = 'wallet is already winning'
         _stopSnipeWatcher()
         return
       }
 
-      if (status.blocksRemaining > snipeCfg.triggerBlocks) return
+      if (status.blocksRemaining > snipeCfg.triggerBlocks) {
+        state.snipe.lastDecision =
+          `waiting for trigger window: ${status.blocksRemaining} blocks remaining, ` +
+          `trigger at <= ${snipeCfg.triggerBlocks}`
+        return
+      }
 
-      const newBidWei = parseEther(status.topBid) + parseEther(state.appConfig.defaults.incrementEth)
       if (newBidWei > parseEther(snipeCfg.maxEth)) {
         state.snipe.status = 'failed'
+        state.snipe.lastDecision = `next bid ${newBid} ETH exceeds max ${snipeCfg.maxEth} ETH`
+        state.snipe.stopReason = 'required bid exceeded maxEth'
         _stopSnipeWatcher()
         return
       }
 
       state.snipe.status = 'fired'
       state.snipe.triggeredAtBlock = status.currentBlock
-
-      const newBid = formatEther(newBidWei)
+      state.snipe.triggeredAt = checkedAt
+      state.snipe.lastDecision = `submitting bid ${newBid} ETH`
       const txHash = await tryBid(status, newBid, {
         usePrivateMempool: snipeCfg.usePrivateMempool,
         gasPriorityMultiplier: snipeCfg.gasPriorityMultiplier,
         dryRun: snipeCfg.dryRun,
       })
       state.snipe.txHash = txHash
+      state.snipe.lastDecision = `submitted bid ${newBid} ETH tx:${txHash}`
+      state.snipe.stopReason = 'bid submitted'
+      _stopSnipeWatcher()
     } catch (err) {
       state.snipe.status = 'failed'
       state.snipe.lastError = (err as Error).message
+      state.snipe.lastDecision = `error: ${(err as Error).message}`
+      state.snipe.stopReason = 'runtime error'
       _stopSnipeWatcher()
     } finally {
       inFlight = false
@@ -261,13 +305,17 @@ export function startSnipe(cfg: SnipeConfig): { ok: boolean; message: string } {
     state.snipe.unwatch = wsClient.watchBlocks({
       onBlock: () => { void onBlock() },
       onError: (err) => {
-        state.snipe.lastError = `watchBlocks error: ${err.message}`
+        const message = `watchBlocks error: ${err.message}`
+        state.snipe.lastError = message
+        state.snipe.lastDecision = message
         state.snipe.status = 'failed'
+        state.snipe.stopReason = 'watchBlocks error'
         _stopSnipeWatcher()
       },
     })
   } else {
     process.stderr.write('[genome-bid-mcp] No rpcWsUrl — snipe falling back to HTTP polling (less precise)\n')
+    state.snipe.lastDecision = 'watching via HTTP polling because rpcWsUrl is not configured'
     const id = setInterval(() => { void onBlock() }, 3_000)
     state.snipe.unwatch = () => clearInterval(id)
     void onBlock()
@@ -287,15 +335,41 @@ function _stopSnipeWatcher(): void {
 export function stopSnipe(): void {
   state.snipe.watching = false
   state.snipe.config = null
+  state.snipe.transport = null
+  state.snipe.status = 'idle'
+  state.snipe.nextBidEth = undefined
+  state.snipe.lastDecision = 'stopped manually'
+  state.snipe.stopReason = 'stopped manually'
   _stopSnipeWatcher()
 }
 
 export function getSnipeState() {
+  const lastObservedAuction = state.snipe.lastObservedAuction
+  const config = state.snipe.config
+
   return {
+    initialized: isInitialized(),
+    walletAddress: state.appConfig?.walletAddress,
     watching: state.snipe.watching,
+    transport: state.snipe.transport,
     status: state.snipe.status,
+    config,
     txHash: state.snipe.txHash,
     triggeredAtBlock: state.snipe.triggeredAtBlock,
+    triggeredAt: state.snipe.triggeredAt,
+    lastCheckedAt: state.snipe.lastCheckedAt,
+    lastDecision: state.snipe.lastDecision,
+    stopReason: state.snipe.stopReason,
     lastError: state.snipe.lastError,
+    nextBidEth: state.snipe.nextBidEth,
+    lastObservedAuction,
+    blocksUntilTrigger:
+      config && lastObservedAuction
+        ? Math.max(0, lastObservedAuction.blocksRemaining - config.triggerBlocks)
+        : undefined,
+    triggerWindowReached:
+      config && lastObservedAuction
+        ? lastObservedAuction.blocksRemaining <= config.triggerBlocks
+        : undefined,
   }
 }

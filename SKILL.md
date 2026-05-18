@@ -56,6 +56,7 @@ When registering this skill in your agent config, set:
 | `start_auto_bid` | Start a background monitor that re-bids whenever you are outbid, up to a configured ETH cap |
 | `stop_auto_bid` | Stop the background monitor |
 | `snipe_bid` | Fire a single bid in the final blocks before the auction deadline with aggressive gas and Flashbots private mempool |
+| `get_snipe_status` | Inspect the current snipe watcher state, including config, trigger progress, and any stop or error reason |
 | `get_bid_history` | List recent bids placed by your wallet |
 | `get_wallet_info` | Show wallet ETH balance, GENE balance, and default bid settings |
 | `withdraw_eth` | Withdraw native ETH from the wallet to any address |

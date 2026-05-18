@@ -15,6 +15,7 @@
     "start_auto_bid",
     "stop_auto_bid",
     "snipe_bid",
+    "get_snipe_status",
     "get_bid_history",
     "get_wallet_info",
     "withdraw_eth",

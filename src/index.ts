@@ -72,6 +72,12 @@ const TOOLS: Tool[] = [
     },
   },
   {
+    name: 'get_snipe_status',
+    description:
+      'Inspect the current snipe watcher state: active config, transport mode, latest observed auction snapshot, trigger-window progress, candidate next bid, and any error or stop reason.',
+    inputSchema: { type: 'object', properties: {}, required: [] },
+  },
+  {
     name: 'get_bid_history',
     description: 'List recent bids placed by this wallet.',
     inputSchema: {
@@ -215,6 +221,9 @@ async function main() {
           break
         case 'snipe_bid':
           result = await handleSnipeBid(args as unknown as Parameters<typeof handleSnipeBid>[0])
+          break
+        case 'get_snipe_status':
+          result = handleGetSnipeStatus()
           break
         case 'get_bid_history':
           result = await handleGetBidHistory(args as unknown as Parameters<typeof handleGetBidHistory>[0])
