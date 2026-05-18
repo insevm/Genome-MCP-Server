@@ -1,12 +1,12 @@
 import { createPublicClient, http, formatEther, parseEther, type Hex } from 'viem'
 import { mainnet } from 'viem/chains'
 import { GENOME_CONTRACT, GENOME_ABI, BLOCK_PER_MINT } from './config.js'
-import { sendBid } from './kernel.js'
+import { sendBid } from './wallet.js'
 import { appendBidRecord } from './store.js'
 import type { Config, AuctionStatus, AutoBidConfig, SnipeConfig, BidRecord } from './types.js'
 
 interface BidderState {
-  sessionPrivateKey: Hex | null
+  privateKey: Hex | null
   appConfig: Config | null
   autoBid: {
     running: boolean
@@ -25,7 +25,7 @@ interface BidderState {
 }
 
 const state: BidderState = {
-  sessionPrivateKey: null,
+  privateKey: null,
   appConfig: null,
   autoBid: {
     running: false,
@@ -43,13 +43,13 @@ const state: BidderState = {
   },
 }
 
-export function initBidder(sessionPrivateKey: Hex, config: Config): void {
-  state.sessionPrivateKey = sessionPrivateKey
+export function initBidder(privateKey: Hex, config: Config): void {
+  state.privateKey = privateKey
   state.appConfig = config
 }
 
 export function isInitialized(): boolean {
-  return state.sessionPrivateKey !== null && state.appConfig !== null
+  return state.privateKey !== null && state.appConfig !== null
 }
 
 function getPublicClient(config: Config) {
@@ -58,7 +58,7 @@ function getPublicClient(config: Config) {
 
 export async function getAuctionStatus(
   config: Config,
-  kernelAddress: string,
+  walletAddress: string,
 ): Promise<AuctionStatus> {
   const client = getPublicClient(config)
 
@@ -66,16 +66,8 @@ export async function getAuctionStatus(
     await Promise.all([
       client.readContract({ address: GENOME_CONTRACT, abi: GENOME_ABI, functionName: 'winner' }),
       client.readContract({ address: GENOME_CONTRACT, abi: GENOME_ABI, functionName: 'topBid' }),
-      client.readContract({
-        address: GENOME_CONTRACT,
-        abi: GENOME_ABI,
-        functionName: 'lastMintBlock',
-      }),
-      client.readContract({
-        address: GENOME_CONTRACT,
-        abi: GENOME_ABI,
-        functionName: 'latestTokenId',
-      }),
+      client.readContract({ address: GENOME_CONTRACT, abi: GENOME_ABI, functionName: 'lastMintBlock' }),
+      client.readContract({ address: GENOME_CONTRACT, abi: GENOME_ABI, functionName: 'latestTokenId' }),
       client.getBlockNumber(),
     ])
 
@@ -90,18 +82,22 @@ export async function getAuctionStatus(
     lastMintBlock: Number(lastMintBlockNum),
     deadlineBlock,
     blocksRemaining,
-    isUserWinning:
-      (winnerAddr as string).toLowerCase() === kernelAddress.toLowerCase(),
+    isUserWinning: (winnerAddr as string).toLowerCase() === walletAddress.toLowerCase(),
   }
 }
 
 async function tryBid(
   status: AuctionStatus,
   bidEth: string,
-  opts: { gasStrategy?: 'normal' | 'fast'; usePrivateMempool?: boolean; gasPriorityMultiplier?: number; dryRun?: boolean },
+  opts: {
+    gasStrategy?: 'normal' | 'fast'
+    usePrivateMempool?: boolean
+    gasPriorityMultiplier?: number
+    dryRun?: boolean
+  },
 ): Promise<string> {
   const config = state.appConfig!
-  const key = state.sessionPrivateKey!
+  const key = state.privateKey!
 
   const txHash = await sendBid(config, key, bidEth, {
     dryRun: opts.dryRun,
@@ -125,8 +121,8 @@ async function tryBid(
 
 export function startAutoBid(cfg: AutoBidConfig): { ok: boolean; message: string } {
   if (state.autoBid.running) return { ok: false, message: 'auto-bid already running' }
-  if (!state.sessionPrivateKey || !state.appConfig)
-    return { ok: false, message: 'bidder not initialized — MCP server missing GENOME_BID_PASSWORD?' }
+  if (!state.privateKey || !state.appConfig)
+    return { ok: false, message: 'bidder not initialized — GENOME_BID_PASSWORD missing?' }
 
   state.autoBid.running = true
   state.autoBid.config = cfg
@@ -137,7 +133,7 @@ export function startAutoBid(cfg: AutoBidConfig): { ok: boolean; message: string
     const bidCfg = state.autoBid.config!
 
     try {
-      const status = await getAuctionStatus(state.appConfig, state.appConfig.kernelAddress)
+      const status = await getAuctionStatus(state.appConfig, state.appConfig.walletAddress)
 
       if (status.blocksRemaining <= 0) {
         state.autoBid.lastAction = 'auction settled, waiting for next round'
@@ -149,7 +145,6 @@ export function startAutoBid(cfg: AutoBidConfig): { ok: boolean; message: string
         return
       }
 
-      // Only react when we're within leadBlocks of the deadline
       if (status.blocksRemaining > bidCfg.leadBlocks) return
 
       const newBidWei = parseEther(status.topBid) + parseEther(bidCfg.incrementEth)
@@ -159,17 +154,13 @@ export function startAutoBid(cfg: AutoBidConfig): { ok: boolean; message: string
       }
 
       const newBid = formatEther(newBidWei)
-      const txHash = await tryBid(status, newBid, {
-        gasStrategy: bidCfg.gasStrategy,
-        dryRun: bidCfg.dryRun,
-      })
+      const txHash = await tryBid(status, newBid, { gasStrategy: bidCfg.gasStrategy, dryRun: bidCfg.dryRun })
       state.autoBid.lastAction = `bid ${newBid} ETH tx:${txHash}`
     } catch (err) {
       state.autoBid.lastAction = `error: ${(err as Error).message}`
     }
   }
 
-  // Poll every ~6 s (half a block on Ethereum)
   state.autoBid.intervalId = setInterval(tick, 6_000)
   tick()
 
@@ -199,7 +190,7 @@ export function getAutoBidState() {
 
 export function startSnipe(cfg: SnipeConfig): { ok: boolean; message: string } {
   if (state.snipe.watching) return { ok: false, message: 'snipe already watching' }
-  if (!state.sessionPrivateKey || !state.appConfig)
+  if (!state.privateKey || !state.appConfig)
     return { ok: false, message: 'bidder not initialized' }
 
   state.snipe.watching = true
@@ -212,13 +203,11 @@ export function startSnipe(cfg: SnipeConfig): { ok: boolean; message: string } {
     if (!state.snipe.watching || !state.appConfig) return
     const snipeCfg = state.snipe.config!
 
-    // Don't poll again after firing
     if (state.snipe.status === 'fired') return
 
     try {
-      const status = await getAuctionStatus(state.appConfig, state.appConfig.kernelAddress)
+      const status = await getAuctionStatus(state.appConfig, state.appConfig.walletAddress)
 
-      // New auction round started — reset and watch again
       if (status.blocksRemaining <= 0) {
         state.snipe.status = 'watching'
         state.snipe.txHash = undefined
@@ -232,19 +221,15 @@ export function startSnipe(cfg: SnipeConfig): { ok: boolean; message: string } {
         return
       }
 
-      // Not in the snipe window yet
       if (status.blocksRemaining > snipeCfg.triggerBlocks) return
 
-      // Check we can afford to outbid
-      const newBidWei =
-        parseEther(status.topBid) + parseEther(state.appConfig.defaults.incrementEth)
+      const newBidWei = parseEther(status.topBid) + parseEther(state.appConfig.defaults.incrementEth)
       if (newBidWei > parseEther(snipeCfg.maxEth)) {
         state.snipe.status = 'failed'
         _stopSnipeInterval()
         return
       }
 
-      // Fire!
       state.snipe.status = 'fired'
       state.snipe.triggeredAtBlock = status.currentBlock
 
@@ -255,13 +240,12 @@ export function startSnipe(cfg: SnipeConfig): { ok: boolean; message: string } {
         dryRun: snipeCfg.dryRun,
       })
       state.snipe.txHash = txHash
-    } catch (err) {
+    } catch {
       state.snipe.status = 'failed'
       _stopSnipeInterval()
     }
   }
 
-  // Poll every 3 s for precision in the final window
   state.snipe.intervalId = setInterval(watch, 3_000)
   watch()
 

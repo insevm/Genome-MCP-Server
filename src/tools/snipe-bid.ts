@@ -36,7 +36,7 @@ export async function handleSnipeBid(args: SnipeBidArgs): Promise<object> {
   return {
     status: snipeState.status,
     config: snipeConfig,
-    kernelAddress: config.kernelAddress,
+    walletAddress: config.walletAddress,
     note: snipeConfig.usePrivateMempool
       ? 'Tx will be submitted via Flashbots Protect to avoid MEV frontrun'
       : 'Tx will be submitted via public mempool',

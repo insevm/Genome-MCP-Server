@@ -1,15 +1,9 @@
 export interface Config {
-  kernelAddress: string
-  sessionKeyAddress: string
-  sessionKeyExpiresAt: string
+  walletAddress: string
   genomeContract: string
   chainId: number
   rpcWsUrl: string
   rpcHttpUrl: string
-  zeroDev: {
-    projectId: string
-    bundlerUrl: string
-  }
   defaults: {
     maxEth: string
     incrementEth: string

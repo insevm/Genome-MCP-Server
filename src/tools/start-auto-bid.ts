@@ -32,9 +32,7 @@ export async function handleStartAutoBid(args: StartAutoBidArgs): Promise<object
 
   return {
     status: 'started',
-    sessionKeyAddress: config.sessionKeyAddress,
-    kernelAddress: config.kernelAddress,
+    walletAddress: config.walletAddress,
     config: bidConfig,
-    expiresAt: config.sessionKeyExpiresAt,
   }
 }

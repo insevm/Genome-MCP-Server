@@ -1,32 +1,26 @@
 import { createPublicClient, http, formatEther, type Address } from 'viem'
 import { mainnet } from 'viem/chains'
 import { loadConfig } from '../store.js'
+import { GENOME_CONTRACT, GENOME_ABI } from '../config.js'
 
 export async function handleGetWalletInfo(): Promise<object> {
   const config = await loadConfig()
-
   const client = createPublicClient({ chain: mainnet, transport: http(config.rpcHttpUrl) })
-  const balanceWei = await client.getBalance({ address: config.kernelAddress as Address })
 
-  const expiresAt = new Date(config.sessionKeyExpiresAt)
-  const now = new Date()
-  const daysRemaining = Math.max(
-    0,
-    Math.floor((expiresAt.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)),
-  )
+  const [balanceWei, geneBalanceRaw] = await Promise.all([
+    client.getBalance({ address: config.walletAddress as Address }),
+    client.readContract({
+      address: GENOME_CONTRACT,
+      abi: GENOME_ABI,
+      functionName: 'balanceOf',
+      args: [config.walletAddress as Address],
+    }) as Promise<bigint>,
+  ])
 
   return {
-    kernelAddress: config.kernelAddress,
+    walletAddress: config.walletAddress,
     balanceEth: formatEther(balanceWei),
-    sessionKey: {
-      address: config.sessionKeyAddress,
-      expiresAt: config.sessionKeyExpiresAt,
-      daysRemaining,
-      policies: {
-        maxPerTx: config.defaults.maxEth,
-        allowedContract: config.genomeContract,
-        allowedFunction: 'bidAndMint()',
-      },
-    },
+    balanceGene: formatEther(geneBalanceRaw),
+    defaults: config.defaults,
   }
 }
