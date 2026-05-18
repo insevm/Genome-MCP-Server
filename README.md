@@ -26,7 +26,7 @@ The MCP server holds an encrypted wallet key on your machine. It can only be unl
 ```
 Please help me install the Genome Auto-Bid MCP Server. Here is what needs to happen — figure out the right commands and paths for my system:
 
-1. Clone https://github.com/insevm/Genome-MCP-Server.git to a suitable local directory and run `npm install` inside it.
+1. Clone https://github.com/insevm/Genome-MCP-Server.git into your agent's skills directory and run `npm install` inside it.
 
 2. Run the interactive setup wizard: `npx genome-bid-mcp setup`
    The wizard will ask for an Ethereum mainnet HTTP RPC URL, an optional WebSocket RPC URL, a default max bid in ETH, and an encryption password. It will then print a wallet address.
