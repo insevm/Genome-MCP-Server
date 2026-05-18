@@ -1,16 +1,16 @@
 # Genome Auto-Bid Skill
 
-This skill lets you automatically bid on [Genome NFT](https://etherscan.io/address/0x852740fad3e6f5cd4b234311172db29004cceea7) auctions on Ethereum mainnet using natural language. Funds stay in a ZeroDev Kernel smart account that only you control. The server holds a single session key whose permissions are enforced on-chain — it cannot exceed your configured bid cap, call any other contract, or act after expiry.
+This skill lets you automatically bid on [Genome NFT](https://etherscan.io/address/0x852740fad3e6f5cd4b234311172db29004cceea7) auctions, buy and sell GENE tokens on Uniswap, and manage a dedicated bidding wallet — all on Ethereum mainnet, all in natural language.
+
+The MCP server holds an encrypted wallet key on the user's machine. It signs transactions locally and never sends the key anywhere.
 
 ## Prerequisites
 
 Before this skill can be used, the following one-time setup must be completed:
 
 1. **Node.js 20+** installed on the user's machine
-2. **MetaMask** installed in the user's browser
-3. **ZeroDev Project ID** — free at [dashboard.zerodev.app](https://dashboard.zerodev.app)
-4. **Ethereum mainnet RPC URLs** — one HTTP and one WebSocket (Alchemy or Infura)
-5. **The setup wizard must have been run** and a `~/.genome-bid/` directory must exist
+2. **Ethereum mainnet RPC URL** — HTTP endpoint from Alchemy, Infura, or any provider. WebSocket is optional but improves snipe precision.
+3. **The setup wizard must have been run** and a `~/.genome-bid/` directory must exist
 
 ## First-Time Setup
 
@@ -21,18 +21,16 @@ npx genome-bid-mcp setup
 ```
 
 The wizard will ask for:
-- ZeroDev Project ID
-- Ethereum mainnet HTTP RPC URL (e.g. `https://eth-mainnet.g.alchemy.com/v2/xxx`)
-- Ethereum mainnet WebSocket RPC URL (e.g. `wss://eth-mainnet.g.alchemy.com/v2/xxx`)
-- Maximum bid cap per transaction (ETH)
-- Session key validity in days
-- An encryption password to protect the local session key
+- Ethereum mainnet HTTP RPC URL
+- Ethereum mainnet WebSocket RPC URL (optional)
+- Default maximum bid per auction (ETH)
+- An encryption password to protect the wallet key
 
-The wizard opens a browser page where the user connects MetaMask and signs an EIP-712 message to authorize the session key on-chain. At the end, it prints the Kernel account address. **Send ETH to that address before placing bids.**
+At the end it prints a wallet address. **The user must send ETH to that address before placing bids or swaps.**
 
 ## Configuration
 
-The MCP server requires the environment variable `GENOME_BID_PASSWORD` — the password chosen during setup. This is used to decrypt the local session key (`~/.genome-bid/session.key`).
+The MCP server requires the environment variable `GENOME_BID_PASSWORD` — the password chosen during setup. This is used to decrypt the wallet key (`~/.genome-bid/session.key`) at startup.
 
 When registering this skill in your agent config, set:
 
@@ -50,20 +48,19 @@ When registering this skill in your agent config, set:
 }
 ```
 
-The skill.json in this directory declares the same server for agents that support the skills directory install pattern.
-
 ## Available Tools
 
 | Tool | Description |
 |------|-------------|
-| `get_bid_status` | Get current auction state: top bid, winner, blocks remaining, whether your Kernel account is winning |
+| `get_bid_status` | Get current auction state: top bid, winner, blocks remaining, whether your wallet is winning |
 | `start_auto_bid` | Start a background monitor that re-bids whenever you are outbid, up to a configured ETH cap |
 | `stop_auto_bid` | Stop the background monitor |
 | `snipe_bid` | Fire a single bid in the final blocks before the auction deadline with aggressive gas and Flashbots private mempool |
-| `get_bid_history` | List recent bids placed by your Kernel account |
-| `get_wallet_info` | Show Kernel account ETH balance and session key status (expiry, address) |
-| `withdraw_eth` | Withdraw native ETH from the Kernel account to any address |
-| `withdraw_gene` | Transfer GENE tokens from the Kernel account to any address |
+| `get_bid_history` | List recent bids placed by your wallet |
+| `get_wallet_info` | Show wallet ETH balance, GENE balance, and default bid settings |
+| `withdraw_eth` | Withdraw native ETH from the wallet to any address |
+| `withdraw_gene` | Transfer GENE tokens from the wallet to any address |
+| `swap_gene` | Buy or sell GENE on Uniswap V3 (ETH/GENE 0.3% pool). Supports exact ETH input, exact GENE input, exact ETH output, and exact GENE output. |
 
 ## Example Prompts
 
@@ -76,22 +73,15 @@ Watch the Genome auction and automatically outbid anyone who beats me, cap at 0.
 
 Snipe the Genome auction in the final seconds, up to 0.35 ETH
 
-Withdraw 0.1 ETH from my Genome Kernel account to 0xABC...
+Buy GENE with 0.1 ETH
+Buy exactly 500 GENE for me
 
+Sell 200 GENE for ETH
+Sell enough GENE to get 0.05 ETH
+
+Withdraw 0.1 ETH from my Genome wallet to 0xABC...
 Send all my GENE tokens to 0xABC...
-
-Show my last 10 Genome bids
 ```
-
-## Session Key Renewal
-
-Session keys expire after the number of days configured at setup. To renew:
-
-```bash
-npx genome-bid-mcp renew
-```
-
-This runs the same browser authorization flow and replaces the stored key.
 
 ## Answering Questions About the Genome Project
 
@@ -113,25 +103,16 @@ When answering, use plain language. Avoid terms like "ERC-20", "ERC-721", "contr
 ## Security Model
 
 ```
-Your main wallet (MetaMask)
-    │  owner relationship
+Your encryption password  (only you know this)
+    │
     ▼
-Kernel smart account  (holds your bidding funds)
-    │  on-chain policy — cannot be bypassed
+Wallet key  (~/.genome-bid/session.key, AES-GCM encrypted)
+    │  MCP protocol (stdio, local process)
     ▼
-Session key  (~/.genome-bid/session.key, AES-GCM encrypted)
-    │  MCP protocol (stdio)
+Genome Auto-Bid MCP Server  (runs on the user's machine)
+    │  signed transactions → Ethereum RPC
     ▼
-Genome Auto-Bid MCP Server  (local process on your machine)
-    │  UserOperation → ZeroDev Bundler
-    ▼
-Genome contract  (bidAndMint / transfer)
+Genome contract / Uniswap V3
 ```
 
-On-chain constraints (enforced by the Kernel contract, not bypassable):
-- May only call the Genome contract (`0x852740fad3e6f5cd4b234311172db29004cceea7`)
-- May only call `bidAndMint()` and `transfer()`
-- ETH value per transaction capped at the limit set during setup
-- Automatically expires after N days
-
-The session key never leaves your machine. All transaction signing happens locally.
+The wallet key never leaves the user's machine. All transaction signing happens locally. Only send to the bidding wallet what the user is willing to use for bidding and swaps.
