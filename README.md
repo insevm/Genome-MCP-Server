@@ -1,5 +1,7 @@
 # Genome Auto-Bid MCP Server
 
+> Repository: [github.com/insevm/Genome-MCP-Server](https://github.com/insevm/Genome-MCP-Server)
+
 Let any MCP-compatible AI agent automatically bid on [Genome NFT](https://etherscan.io/address/0x852740fad3e6f5cd4b234311172db29004cceea7) auctions using natural language.
 
 Funds stay in a ZeroDev Kernel smart account that only you control. The MCP server holds a single session key whose permissions are enforced on-chain — it cannot exceed your configured bid cap, call any other contract, or act after expiry.
@@ -24,7 +26,7 @@ Funds stay in a ZeroDev Kernel smart account that only you control. The MCP serv
 Please install the Genome Auto-Bid MCP Server for me. Steps:
 
 1. Clone the repo and install dependencies:
-   cd ~/Desktop && git clone <repo-url> genome-bid-mcp && cd genome-bid-mcp && npm install
+   cd ~/Desktop && git clone https://github.com/insevm/Genome-MCP-Server.git genome-bid-mcp && cd genome-bid-mcp && npm install
 
 2. Run the setup wizard (interactive terminal required):
    npx genome-bid-mcp setup
@@ -80,7 +82,7 @@ If you hit any errors, share the exact error message and I will help.
 npm install -g genome-bid-mcp
 
 # Or from source
-git clone <repo-url> genome-bid-mcp
+git clone https://github.com/insevm/Genome-MCP-Server.git genome-bid-mcp
 cd genome-bid-mcp
 npm install
 npm run build
