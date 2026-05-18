@@ -3,6 +3,7 @@ import { mainnet } from 'viem/chains'
 import { sendEthWithdrawal } from '../wallet.js'
 import { loadConfig } from '../store.js'
 import { isInitialized } from '../bidder.js'
+import { validateAddress, validatePositiveDecimal } from '../validate.js'
 
 interface WithdrawEthArgs {
   toAddress: string
@@ -19,6 +20,9 @@ export async function handleWithdrawEth(
   if (!isInitialized()) {
     throw new Error('Bidder not initialized. GENOME_BID_PASSWORD env var not set?')
   }
+
+  validateAddress(args.toAddress, 'toAddress')
+  validatePositiveDecimal(args.amountEth, 'amountEth')
 
   const config = await loadConfig()
   const client = createPublicClient({ chain: mainnet, transport: http(config.rpcHttpUrl) })

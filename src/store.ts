@@ -1,6 +1,6 @@
 import { gcm } from '@noble/ciphers/aes'
 import { randomBytes } from '@noble/ciphers/webcrypto'
-import { sha256 } from '@noble/hashes/sha256'
+import { scrypt } from '@noble/hashes/scrypt'
 import { promises as fs } from 'fs'
 import { homedir } from 'os'
 import { join } from 'path'
@@ -11,46 +11,68 @@ const SESSION_KEY_FILE = join(STORAGE_DIR, 'session.key')
 const CONFIG_FILE = join(STORAGE_DIR, 'config.json')
 export const HISTORY_FILE = join(STORAGE_DIR, 'history.jsonl')
 
+const SALT_LEN  = 16
+const NONCE_LEN = 12
+
 async function ensureDir(): Promise<void> {
   await fs.mkdir(STORAGE_DIR, { recursive: true })
 }
 
-function deriveKey(password: string): Uint8Array {
-  return sha256(new TextEncoder().encode(password))
+// scrypt with recommended interactive parameters (N=2^17 ≈ 1 s on commodity hardware)
+function deriveKey(password: string, salt: Uint8Array): Uint8Array {
+  return scrypt(new TextEncoder().encode(password), salt, {
+    N: 2 ** 17, r: 8, p: 1, dkLen: 32,
+  })
 }
 
+// File format: [16-byte salt][12-byte nonce][AES-GCM ciphertext], base64-encoded
 export async function saveSessionKey(privateKey: string, password: string): Promise<void> {
   await ensureDir()
-  const key = deriveKey(password)
-  const nonce = randomBytes(12)
-  const cipher = gcm(key, nonce)
-  const data = new TextEncoder().encode(privateKey)
-  const encrypted = cipher.encrypt(data)
+  const salt  = randomBytes(SALT_LEN)
+  const nonce = randomBytes(NONCE_LEN)
+  const key   = deriveKey(password, salt)
+  const encrypted = gcm(key, nonce).encrypt(new TextEncoder().encode(privateKey))
 
-  const payload = new Uint8Array(12 + encrypted.length)
-  payload.set(nonce, 0)
-  payload.set(encrypted, 12)
+  const payload = new Uint8Array(SALT_LEN + NONCE_LEN + encrypted.length)
+  payload.set(salt,      0)
+  payload.set(nonce,     SALT_LEN)
+  payload.set(encrypted, SALT_LEN + NONCE_LEN)
 
-  await fs.writeFile(SESSION_KEY_FILE, Buffer.from(payload).toString('base64'), 'utf8')
+  await fs.writeFile(
+    SESSION_KEY_FILE,
+    Buffer.from(payload).toString('base64'),
+    { encoding: 'utf8', mode: 0o600 },
+  )
 }
 
 export async function loadSessionKey(password: string): Promise<string> {
-  const raw = await fs.readFile(SESSION_KEY_FILE, 'utf8')
+  const raw     = await fs.readFile(SESSION_KEY_FILE, 'utf8')
   const payload = Buffer.from(raw.trim(), 'base64')
 
-  const nonce = payload.subarray(0, 12)
-  const encrypted = payload.subarray(12)
+  if (payload.length < SALT_LEN + NONCE_LEN + 1) {
+    throw new Error(
+      'Wallet key file format is outdated. Re-run `npx genome-bid-mcp setup` to generate a new key.',
+    )
+  }
 
-  const key = deriveKey(password)
-  const cipher = gcm(key, nonce)
-  const decrypted = cipher.decrypt(encrypted)
+  const salt      = payload.subarray(0, SALT_LEN)
+  const nonce     = payload.subarray(SALT_LEN, SALT_LEN + NONCE_LEN)
+  const encrypted = payload.subarray(SALT_LEN + NONCE_LEN)
+  const key       = deriveKey(password, salt)
 
-  return new TextDecoder().decode(decrypted)
+  try {
+    const decrypted = gcm(key, nonce).decrypt(encrypted)
+    return new TextDecoder().decode(decrypted)
+  } catch {
+    throw new Error(
+      'Failed to decrypt wallet key — wrong password, or key file is outdated. Re-run setup if needed.',
+    )
+  }
 }
 
 export async function saveConfig(config: Config): Promise<void> {
   await ensureDir()
-  await fs.writeFile(CONFIG_FILE, JSON.stringify(config, null, 2), 'utf8')
+  await fs.writeFile(CONFIG_FILE, JSON.stringify(config, null, 2), { encoding: 'utf8', mode: 0o600 })
 }
 
 export async function loadConfig(): Promise<Config> {
@@ -74,13 +96,15 @@ export async function appendBidRecord(record: BidRecord): Promise<void> {
 
 export async function readBidHistory(limit: number): Promise<BidRecord[]> {
   try {
-    const raw = await fs.readFile(HISTORY_FILE, 'utf8')
+    const raw   = await fs.readFile(HISTORY_FILE, 'utf8')
     const lines = raw.trim().split('\n').filter(Boolean)
     return lines
       .slice(-limit)
       .map(l => JSON.parse(l) as BidRecord)
       .reverse()
-  } catch {
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return []
+    process.stderr.write(`[genome-bid-mcp] Failed to read bid history: ${(err as Error).message}\n`)
     return []
   }
 }

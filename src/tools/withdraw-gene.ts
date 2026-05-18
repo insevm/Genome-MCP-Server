@@ -4,6 +4,7 @@ import { sendGeneWithdrawal } from '../wallet.js'
 import { loadConfig } from '../store.js'
 import { isInitialized } from '../bidder.js'
 import { GENOME_CONTRACT, GENOME_ABI } from '../config.js'
+import { validateAddress, validatePositiveDecimal } from '../validate.js'
 
 interface WithdrawGeneArgs {
   toAddress: string
@@ -18,6 +19,9 @@ export async function handleWithdrawGene(
   if (!isInitialized()) {
     throw new Error('Bidder not initialized. GENOME_BID_PASSWORD env var not set?')
   }
+
+  validateAddress(args.toAddress, 'toAddress')
+  validatePositiveDecimal(args.amountGene, 'amountGene')
 
   const config = await loadConfig()
   const client = createPublicClient({ chain: mainnet, transport: http(config.rpcHttpUrl) })

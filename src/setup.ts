@@ -14,6 +14,40 @@ function prompt(question: string): Promise<string> {
   })
 }
 
+function promptPassword(question: string): Promise<string> {
+  return new Promise((resolve) => {
+    process.stdout.write(question)
+    process.stdin.setRawMode(true)
+    process.stdin.resume()
+    process.stdin.setEncoding('utf8')
+
+    let password = ''
+    const onData = (char: string) => {
+      if (char === '\r' || char === '\n') {
+        process.stdin.setRawMode(false)
+        process.stdin.pause()
+        process.stdin.removeListener('data', onData)
+        process.stdout.write('\n')
+        resolve(password)
+      } else if (char === '') {
+        process.stdin.setRawMode(false)
+        process.stdin.pause()
+        process.stdout.write('\n')
+        process.exit(1)
+      } else if (char === '' || char === '') {
+        if (password.length > 0) {
+          password = password.slice(0, -1)
+          process.stdout.write('\b \b')
+        }
+      } else {
+        password += char
+        process.stdout.write('*')
+      }
+    }
+    process.stdin.on('data', onData)
+  })
+}
+
 export async function runSetup(mode: 'setup' | 'renew'): Promise<void> {
   console.log('\n╔══════════════════════════════════════════╗')
   console.log('║     Genome Auto-Bid MCP — Setup          ║')
@@ -28,7 +62,7 @@ export async function runSetup(mode: 'setup' | 'renew'): Promise<void> {
     (await prompt('Enter your Ethereum mainnet WebSocket RPC URL (leave blank to skip): '))
 
   const maxEth = (await prompt('Default max bid per auction (ETH) [default: 0.5]: ')) || '0.5'
-  const password = await prompt('Set an encryption password for the wallet key: ')
+  const password = await promptPassword('Set an encryption password for the wallet key: ')
 
   const privateKey = generateWalletKey()
   const walletAddress = getWalletAddress(privateKey)
@@ -68,7 +102,7 @@ export async function runSetup(mode: 'setup' | 'renew'): Promise<void> {
       "command": "npx",
       "args": ["genome-bid-mcp"],
       "env": {
-        "GENOME_BID_PASSWORD": "${password}"
+        "GENOME_BID_PASSWORD": "<your-password>"
       }
     }
   }

@@ -211,7 +211,7 @@ export async function handleSwapGene(
     const swapData = encodeFunctionData({
       abi: SWAP_ROUTER_ABI,
       functionName: 'exactInputSingle',
-      args: [{ tokenIn: GENOME_CONTRACT, tokenOut: WETH9, fee: GENE_ETH_FEE, recipient: UNISWAP_SWAP_ROUTER as Address, amountIn, amountOutMinimum: 0n, sqrtPriceLimitX96: 0n }],
+      args: [{ tokenIn: GENOME_CONTRACT, tokenOut: WETH9, fee: GENE_ETH_FEE, recipient: UNISWAP_SWAP_ROUTER as Address, amountIn, amountOutMinimum: amountOutMin, sqrtPriceLimitX96: 0n }],
     })
     const unwrapData = encodeFunctionData({
       abi: SWAP_ROUTER_ABI,
