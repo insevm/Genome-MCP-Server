@@ -23,43 +23,29 @@ Funds stay in a ZeroDev Kernel smart account that only you control. The MCP serv
 > Paste the prompt below into your AI agent and it will handle the full setup automatically.
 
 ```
-Please install the Genome Auto-Bid MCP Server for me. Steps:
+Please help me install the Genome Auto-Bid MCP Server. Here is what needs to happen — figure out the right commands and paths for my system:
 
-1. Clone the repo into your Claude skills directory and install dependencies:
-   mkdir -p ~/.claude/skills && git clone https://github.com/insevm/Genome-MCP-Server.git ~/.claude/skills/genome-bid-mcp && cd ~/.claude/skills/genome-bid-mcp && npm install
+1. Clone https://github.com/insevm/Genome-MCP-Server.git to a suitable local directory and run `npm install` inside it.
 
-2. Run the setup wizard (interactive terminal required):
-   npx genome-bid-mcp setup
+2. Run the interactive setup wizard: `npx genome-bid-mcp setup`
+   The wizard will ask for a ZeroDev Project ID (free at https://dashboard.zerodev.app), Ethereum mainnet HTTP and WebSocket RPC URLs, a max bid cap in ETH, session key validity in days, and an encryption password. It then opens a browser page — I will complete the MetaMask authorization step myself.
 
-   The wizard will ask for:
-   - ZeroDev Project ID (free at https://dashboard.zerodev.app)
-   - Ethereum mainnet RPC URLs — one HTTP and one WebSocket (Alchemy or Infura)
-   - Maximum bid cap in ETH and session key validity in days
-   - An encryption password to protect the local session key
-   Then it opens a browser page to authorize the session key via MetaMask.
-
-3. After the wizard finishes, add the printed config snippet to your agent config file:
-   - Claude Desktop: ~/Library/Application Support/Claude/claude_desktop_config.json
-   - Other MCP agents: see their documentation
-
-   The wizard prints the exact snippet at the end:
+3. The wizard prints an MCP server config snippet when it finishes. Register it in my agent's MCP config so the server starts automatically. The snippet looks like:
    {
      "mcpServers": {
        "genome-bid": {
          "command": "npx",
          "args": ["genome-bid-mcp"],
-         "env": {
-           "GENOME_BID_PASSWORD": "<your password>"
-         }
+         "env": { "GENOME_BID_PASSWORD": "<my password>" }
        }
      }
    }
 
-4. Send ETH to your Kernel account address (printed at the end of the wizard).
+4. Tell me the Kernel account address printed by the wizard — I will send ETH to it.
 
-5. Restart the agent. Done.
+5. Restart the agent after the config is saved.
 
-If you hit any errors, share the exact error message and I will help.
+If you hit any errors, share the exact message and I will help troubleshoot.
 ```
 
 ---
