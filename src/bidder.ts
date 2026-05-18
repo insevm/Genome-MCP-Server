@@ -1,7 +1,7 @@
 import { createPublicClient, http, formatEther, parseEther, type Hex } from 'viem'
 import { mainnet } from 'viem/chains'
 import { GENOME_CONTRACT, GENOME_ABI, BLOCK_PER_MINT } from './config.js'
-import { sendBid } from './wallet.js'
+import { sendBid, makePublicClient } from './wallet.js'
 import { appendBidRecord } from './store.js'
 import type { Config, AuctionStatus, AutoBidConfig, SnipeConfig, BidRecord } from './types.js'
 
@@ -17,7 +17,7 @@ interface BidderState {
   snipe: {
     watching: boolean
     config: SnipeConfig | null
-    intervalId: ReturnType<typeof setInterval> | null
+    unwatch: (() => void) | null
     status: 'watching' | 'fired' | 'won' | 'failed'
     txHash: string | undefined
     triggeredAtBlock: number | undefined
@@ -37,7 +37,7 @@ const state: BidderState = {
   snipe: {
     watching: false,
     config: null,
-    intervalId: null,
+    unwatch: null,
     status: 'watching',
     txHash: undefined,
     triggeredAtBlock: undefined,
@@ -200,12 +200,17 @@ export function startSnipe(cfg: SnipeConfig): { ok: boolean; message: string } {
   state.snipe.status = 'watching'
   state.snipe.txHash = undefined
   state.snipe.triggeredAtBlock = undefined
+  state.snipe.lastError = undefined
 
-  const watch = async () => {
+  const config = state.appConfig
+  let inFlight = false
+
+  const onBlock = async () => {
     if (!state.snipe.watching || !state.appConfig) return
     const snipeCfg = state.snipe.config!
 
-    if (state.snipe.status === 'fired') return
+    if (state.snipe.status === 'fired' || inFlight) return
+    inFlight = true
 
     try {
       const status = await getAuctionStatus(state.appConfig, state.appConfig.walletAddress)
@@ -219,7 +224,7 @@ export function startSnipe(cfg: SnipeConfig): { ok: boolean; message: string } {
 
       if (status.isUserWinning) {
         state.snipe.status = 'won'
-        _stopSnipeInterval()
+        _stopSnipeWatcher()
         return
       }
 
@@ -228,7 +233,7 @@ export function startSnipe(cfg: SnipeConfig): { ok: boolean; message: string } {
       const newBidWei = parseEther(status.topBid) + parseEther(state.appConfig.defaults.incrementEth)
       if (newBidWei > parseEther(snipeCfg.maxEth)) {
         state.snipe.status = 'failed'
-        _stopSnipeInterval()
+        _stopSnipeWatcher()
         return
       }
 
@@ -245,27 +250,44 @@ export function startSnipe(cfg: SnipeConfig): { ok: boolean; message: string } {
     } catch (err) {
       state.snipe.status = 'failed'
       state.snipe.lastError = (err as Error).message
-      _stopSnipeInterval()
+      _stopSnipeWatcher()
+    } finally {
+      inFlight = false
     }
   }
 
-  state.snipe.intervalId = setInterval(watch, 3_000)
-  watch()
+  if (config.rpcWsUrl) {
+    const wsClient = makePublicClient(config)
+    state.snipe.unwatch = wsClient.watchBlocks({
+      onBlock: () => { void onBlock() },
+      onError: (err) => {
+        state.snipe.lastError = `watchBlocks error: ${err.message}`
+        state.snipe.status = 'failed'
+        _stopSnipeWatcher()
+      },
+    })
+  } else {
+    process.stderr.write('[genome-bid-mcp] No rpcWsUrl — snipe falling back to HTTP polling (less precise)\n')
+    const id = setInterval(() => { void onBlock() }, 3_000)
+    state.snipe.unwatch = () => clearInterval(id)
+    void onBlock()
+  }
 
-  return { ok: true, message: 'watching' }
+  return { ok: true, message: config.rpcWsUrl ? 'watching (WebSocket)' : 'watching (HTTP polling)' }
 }
 
-function _stopSnipeInterval(): void {
-  if (state.snipe.intervalId) {
-    clearInterval(state.snipe.intervalId)
-    state.snipe.intervalId = null
+function _stopSnipeWatcher(): void {
+  state.snipe.watching = false
+  if (state.snipe.unwatch) {
+    state.snipe.unwatch()
+    state.snipe.unwatch = null
   }
 }
 
 export function stopSnipe(): void {
   state.snipe.watching = false
   state.snipe.config = null
-  _stopSnipeInterval()
+  _stopSnipeWatcher()
 }
 
 export function getSnipeState() {
