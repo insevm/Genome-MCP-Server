@@ -25,8 +25,8 @@ Funds stay in a ZeroDev Kernel smart account that only you control. The MCP serv
 ```
 Please install the Genome Auto-Bid MCP Server for me. Steps:
 
-1. Clone the repo and install dependencies:
-   cd ~/Desktop && git clone https://github.com/insevm/Genome-MCP-Server.git genome-bid-mcp && cd genome-bid-mcp && npm install
+1. Clone the repo into your Claude skills directory and install dependencies:
+   mkdir -p ~/.claude/skills && git clone https://github.com/insevm/Genome-MCP-Server.git ~/.claude/skills/genome-bid-mcp && cd ~/.claude/skills/genome-bid-mcp && npm install
 
 2. Run the setup wizard (interactive terminal required):
    npx genome-bid-mcp setup
@@ -81,9 +81,10 @@ If you hit any errors, share the exact error message and I will help.
 # From npm (once published)
 npm install -g genome-bid-mcp
 
-# Or from source
-git clone https://github.com/insevm/Genome-MCP-Server.git genome-bid-mcp
-cd genome-bid-mcp
+# Or from source (installs into Claude skills directory)
+mkdir -p ~/.claude/skills
+git clone https://github.com/insevm/Genome-MCP-Server.git ~/.claude/skills/genome-bid-mcp
+cd ~/.claude/skills/genome-bid-mcp
 npm install
 npm run build
 ```
