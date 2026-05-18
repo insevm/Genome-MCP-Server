@@ -17,6 +17,8 @@ import { handleGetWalletInfo } from './tools/get-wallet-info.js'
 import { handleWithdrawEth } from './tools/withdraw-eth.js'
 import { handleWithdrawGene } from './tools/withdraw-gene.js'
 import { handleSwapGene } from './tools/swap-gene.js'
+import { handleAnalyzeAuctionHistory } from './tools/analyze-auction-history.js'
+import { handleAnalyzeBidder } from './tools/analyze-bidder.js'
 
 if (process.argv[2] === 'setup' || process.argv[2] === 'renew') {
   const { runSetup } = await import('./setup.js')
@@ -113,6 +115,31 @@ const TOOLS: Tool[] = [
     },
   },
   {
+    name: 'analyze_auction_history',
+    description:
+      'Read on-chain BidPlaced and AuctionSettled events for the last N completed auction rounds. Returns per-round bid records (who bid, how much, how many blocks before deadline), winning bid stats, and a leaderboard of the most active bidders. Use this to understand the competitive landscape before deciding a bidding strategy.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        rounds: { type: 'number', description: 'Number of completed rounds to analyze, default 10, max 20' },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'analyze_bidder',
+    description:
+      'Analyze a specific Ethereum address\'s historical bidding behavior in Genome auctions. Returns win rate, highest and average bid, bid timing pattern (sniper vs early bidder vs mid-round), and bid increment distribution. Use this to profile a competitor and calibrate your counter-strategy.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        address: { type: 'string', description: 'Ethereum address to analyze' },
+        rounds:  { type: 'number', description: 'Number of recent rounds to look back, default 20, max 50' },
+      },
+      required: ['address'],
+    },
+  },
+  {
     name: 'swap_gene',
     description:
       'Buy or sell GENE on Uniswap V3 (ETH/GENE 0.3% pool). Specify direction ("buy" or "sell") and either an ETH amount or a GENE amount — the other side is quoted from the pool.',
@@ -191,6 +218,12 @@ async function main() {
         case 'withdraw_gene':
           if (!_privateKey) throw new Error('Wallet key not loaded. GENOME_BID_PASSWORD set?')
           result = await handleWithdrawGene(args as unknown as Parameters<typeof handleWithdrawGene>[0], _privateKey)
+          break
+        case 'analyze_auction_history':
+          result = await handleAnalyzeAuctionHistory(args as unknown as Parameters<typeof handleAnalyzeAuctionHistory>[0])
+          break
+        case 'analyze_bidder':
+          result = await handleAnalyzeBidder(args as unknown as Parameters<typeof handleAnalyzeBidder>[0])
           break
         case 'swap_gene':
           if (!_privateKey) throw new Error('Wallet key not loaded. GENOME_BID_PASSWORD set?')
