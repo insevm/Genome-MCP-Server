@@ -6,6 +6,9 @@ export const BLOCK_PER_MINT = 104n
 
 export const FLASHBOTS_RPC = 'https://rpc.flashbots.net'
 
+// Uniswap V3 GENE/WETH pool — used for floor price calculations
+export const GENE_WETH_POOL = '0xe7D546042D3aa0EBd6Db63b599305C59F0Eb781c' as const
+
 // Uniswap V3
 export const UNISWAP_SWAP_ROUTER = '0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45' as const
 export const UNISWAP_QUOTER_V2  = '0x61fFE014bA17989E743c5F6cB21bF9697530B21e' as const

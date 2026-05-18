@@ -19,6 +19,7 @@ import { handleWithdrawGene } from './tools/withdraw-gene.js'
 import { handleSwapGene } from './tools/swap-gene.js'
 import { handleAnalyzeAuctionHistory } from './tools/analyze-auction-history.js'
 import { handleAnalyzeBidder } from './tools/analyze-bidder.js'
+import { handleGetFloorPrice } from './tools/get-floor-price.js'
 
 if (process.argv[2] === 'setup' || process.argv[2] === 'renew') {
   const { runSetup } = await import('./setup.js')
@@ -113,6 +114,16 @@ const TOOLS: Tool[] = [
       },
       required: ['toAddress', 'amountGene'],
     },
+  },
+  {
+    name: 'get_floor_price',
+    description:
+      'Calculate the break-even bid price for the next Genome NFT auction. ' +
+      'Reads the GENE embedded in the next NFT (based on the current halving era), ' +
+      'then quotes selling that GENE on Uniswap V3 to get the ETH recovery value. ' +
+      'Any bid at or below this floor price is risk-free — the embedded GENE can be sold ' +
+      'to fully recover the cost. Use this before setting maxEth in start_auto_bid.',
+    inputSchema: { type: 'object', properties: {}, required: [] },
   },
   {
     name: 'analyze_auction_history',
@@ -218,6 +229,9 @@ async function main() {
         case 'withdraw_gene':
           if (!_privateKey) throw new Error('Wallet key not loaded. GENOME_BID_PASSWORD set?')
           result = await handleWithdrawGene(args as unknown as Parameters<typeof handleWithdrawGene>[0], _privateKey)
+          break
+        case 'get_floor_price':
+          result = await handleGetFloorPrice()
           break
         case 'analyze_auction_history':
           result = await handleAnalyzeAuctionHistory(args as unknown as Parameters<typeof handleAnalyzeAuctionHistory>[0])
