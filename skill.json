@@ -1,0 +1,29 @@
+{
+  "name": "genome-bid",
+  "version": "0.1.0",
+  "description": "Genome NFT auto-bid MCP server — place bids, snipe auctions, and manage your Kernel smart account on Ethereum mainnet.",
+  "mcp_server": {
+    "transport": "stdio",
+    "command": "npx",
+    "args": ["genome-bid-mcp"],
+    "env": {
+      "GENOME_BID_PASSWORD": "${GENOME_BID_PASSWORD}"
+    }
+  },
+  "tools": [
+    "get_bid_status",
+    "start_auto_bid",
+    "stop_auto_bid",
+    "snipe_bid",
+    "get_bid_history",
+    "get_wallet_info",
+    "withdraw_eth",
+    "withdraw_gene"
+  ],
+  "setup": {
+    "command": "npx genome-bid-mcp setup",
+    "docs": "SKILL.md"
+  },
+  "repository": "https://github.com/insevm/Genome-MCP-Server",
+  "license": "MIT"
+}
