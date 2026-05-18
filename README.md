@@ -13,6 +13,7 @@ Funds stay in a ZeroDev Kernel smart account that only you control. The MCP serv
 - [AI Agent Auto-Install](#ai-agent-auto-install)
 - [Manual Install](#manual-install)
 - [Usage Examples](#usage-examples)
+- [Ask About Genome](#ask-about-genome)
 - [Security Model](#security-model)
 - [FAQ](#faq)
 
@@ -224,6 +225,54 @@ Stop the Genome auto-bid
 
 ```bash
 npx genome-bid-mcp renew
+```
+
+---
+
+## Ask About Genome
+
+Your agent has a built-in knowledge base about the Genome project (`docs/genome-project.md`). You can ask questions in plain language — no need to read the contract code yourself.
+
+**Project basics**
+
+```
+What is Genome?
+How many NFTs will ever exist?
+What is GENE?
+```
+
+**Auction mechanics**
+
+```
+How does the Genome auction work?
+What happens if someone outbids me?
+Does a new bid extend the auction timer?
+What is the minimum bid?
+```
+
+**Token economics**
+
+```
+What is the halving schedule?
+Where does the auction money go?
+How does the community treasury work?
+```
+
+**NFT artwork**
+
+```
+What do the letters on a Genome NFT mean?
+Why does the NFT image change over time?
+Is the artwork stored on-chain?
+What is the rarest letter?
+```
+
+**Balances and transfers**
+
+```
+How is my GENE balance calculated?
+What happens if I send GENE to someone who already has 10 NFTs?
+Can I send GENE without transferring the NFT?
 ```
 
 ---

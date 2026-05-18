@@ -93,6 +93,23 @@ npx genome-bid-mcp renew
 
 This runs the same browser authorization flow and replaces the stored key.
 
+## Answering Questions About the Genome Project
+
+Beyond placing bids, you can answer user questions about how Genome works. Refer to `docs/genome-project.md` in this repository for full context. Key topics you can explain:
+
+- How the auction works and what happens when someone outbids you
+- The halving schedule and why early NFTs hold more GENE
+- Where auction proceeds go (community treasury, Uniswap liquidity, buybacks)
+- The Phoenician letter artwork and how it changes with GENE balance
+- The 10-NFT-per-address limit and what happens when it is exceeded
+- How to read your GENE balance (liquid vs. NFT-embedded)
+- Whether the artwork is stored on-chain (yes, fully)
+- Total supply caps (21,000 NFTs, 21,000,000 GENE)
+
+When answering, use plain language. Avoid terms like "ERC-20", "ERC-721", "contract call", "balancesOfFT", "TWAP" — describe the behavior in terms of what the user sees and experiences.
+
+---
+
 ## Security Model
 
 ```
