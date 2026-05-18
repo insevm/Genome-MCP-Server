@@ -2,7 +2,7 @@ export interface Config {
   walletAddress: string
   genomeContract: string
   chainId: number
-  rpcWsUrl: string
+  rpcWsUrl?: string
   rpcHttpUrl: string
   defaults: {
     maxEth: string

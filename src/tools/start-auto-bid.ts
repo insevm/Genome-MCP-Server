@@ -1,5 +1,6 @@
 import { startAutoBid, isInitialized } from '../bidder.js'
 import { loadConfig } from '../store.js'
+import { validatePositiveDecimal } from '../validate.js'
 import type { AutoBidConfig } from '../types.js'
 
 interface StartAutoBidArgs {
@@ -16,6 +17,9 @@ export async function handleStartAutoBid(args: StartAutoBidArgs): Promise<object
       'Bidder not initialized. Make sure GENOME_BID_PASSWORD is set in the MCP server env.',
     )
   }
+
+  validatePositiveDecimal(args.maxEth, 'maxEth')
+  if (args.incrementEth !== undefined) validatePositiveDecimal(args.incrementEth, 'incrementEth')
 
   const config = await loadConfig()
 

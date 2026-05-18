@@ -9,13 +9,14 @@ import type { Config, BidRecord } from './types.js'
 const STORAGE_DIR = join(homedir(), '.genome-bid')
 const SESSION_KEY_FILE = join(STORAGE_DIR, 'session.key')
 const CONFIG_FILE = join(STORAGE_DIR, 'config.json')
+const RPC_FILE = join(STORAGE_DIR, 'rpc.json')
 export const HISTORY_FILE = join(STORAGE_DIR, 'history.jsonl')
 
 const SALT_LEN  = 16
 const NONCE_LEN = 12
 
 async function ensureDir(): Promise<void> {
-  await fs.mkdir(STORAGE_DIR, { recursive: true })
+  await fs.mkdir(STORAGE_DIR, { recursive: true, mode: 0o700 })
 }
 
 // scrypt with recommended interactive parameters (N=2^17 ≈ 1 s on commodity hardware)
@@ -43,6 +44,7 @@ export async function saveSessionKey(privateKey: string, password: string): Prom
     Buffer.from(payload).toString('base64'),
     { encoding: 'utf8', mode: 0o600 },
   )
+  await fs.chmod(SESSION_KEY_FILE, 0o600)
 }
 
 export async function loadSessionKey(password: string): Promise<string> {
@@ -70,19 +72,36 @@ export async function loadSessionKey(password: string): Promise<string> {
   }
 }
 
+// RPC URLs contain API keys — stored separately so the wallet config blob is safe to inspect
 export async function saveConfig(config: Config): Promise<void> {
   await ensureDir()
-  await fs.writeFile(CONFIG_FILE, JSON.stringify(config, null, 2), { encoding: 'utf8', mode: 0o600 })
+  const { rpcHttpUrl, rpcWsUrl, ...walletConfig } = config
+  await fs.writeFile(CONFIG_FILE, JSON.stringify(walletConfig, null, 2), { encoding: 'utf8', mode: 0o600 })
+  await fs.chmod(CONFIG_FILE, 0o600)
+  await fs.writeFile(RPC_FILE, JSON.stringify({ rpcHttpUrl, rpcWsUrl }, null, 2), { encoding: 'utf8', mode: 0o600 })
+  await fs.chmod(RPC_FILE, 0o600)
 }
 
 export async function loadConfig(): Promise<Config> {
-  const raw = await fs.readFile(CONFIG_FILE, 'utf8')
-  return JSON.parse(raw) as Config
+  const [rawConfig, rawRpc] = await Promise.all([
+    fs.readFile(CONFIG_FILE, 'utf8'),
+    fs.readFile(RPC_FILE, 'utf8').catch(() => {
+      throw new Error('RPC config missing. Re-run `npx genome-bid-mcp setup` to regenerate.')
+    }),
+  ])
+  const config = JSON.parse(rawConfig)
+  const rpc = JSON.parse(rawRpc)
+
+  if (!config.walletAddress || !config.defaults || !rpc.rpcHttpUrl) {
+    throw new Error('Config is incomplete or corrupted. Re-run `npx genome-bid-mcp setup`.')
+  }
+
+  return { ...config, ...rpc } as Config
 }
 
 export async function configExists(): Promise<boolean> {
   try {
-    await fs.access(CONFIG_FILE)
+    await Promise.all([fs.access(CONFIG_FILE), fs.access(RPC_FILE)])
     return true
   } catch {
     return false

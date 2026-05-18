@@ -21,6 +21,7 @@ interface BidderState {
     status: 'watching' | 'fired' | 'won' | 'failed'
     txHash: string | undefined
     triggeredAtBlock: number | undefined
+    lastError: string | undefined
   }
 }
 
@@ -40,6 +41,7 @@ const state: BidderState = {
     status: 'watching',
     txHash: undefined,
     triggeredAtBlock: undefined,
+    lastError: undefined,
   },
 }
 
@@ -240,8 +242,9 @@ export function startSnipe(cfg: SnipeConfig): { ok: boolean; message: string } {
         dryRun: snipeCfg.dryRun,
       })
       state.snipe.txHash = txHash
-    } catch {
+    } catch (err) {
       state.snipe.status = 'failed'
+      state.snipe.lastError = (err as Error).message
       _stopSnipeInterval()
     }
   }
@@ -271,5 +274,6 @@ export function getSnipeState() {
     status: state.snipe.status,
     txHash: state.snipe.txHash,
     triggeredAtBlock: state.snipe.triggeredAtBlock,
+    lastError: state.snipe.lastError,
   }
 }

@@ -15,33 +15,42 @@ function prompt(question: string): Promise<string> {
 }
 
 function promptPassword(question: string): Promise<string> {
-  return new Promise((resolve) => {
-    process.stdout.write(question)
+  return new Promise((resolve, reject) => {
+    process.stderr.write(question)
     process.stdin.setRawMode(true)
     process.stdin.resume()
     process.stdin.setEncoding('utf8')
 
     let password = ''
+    const cleanup = (exitCode?: number) => {
+      try { process.stdin.setRawMode(false) } catch { /* ignore */ }
+      process.stdin.pause()
+      process.stdin.removeListener('data', onData)
+      process.stderr.write('\n')
+      if (exitCode !== undefined) process.exit(exitCode)
+    }
+
     const onData = (char: string) => {
-      if (char === '\r' || char === '\n') {
-        process.stdin.setRawMode(false)
-        process.stdin.pause()
-        process.stdin.removeListener('data', onData)
-        process.stdout.write('\n')
-        resolve(password)
-      } else if (char === '') {
-        process.stdin.setRawMode(false)
-        process.stdin.pause()
-        process.stdout.write('\n')
-        process.exit(1)
-      } else if (char === '' || char === '') {
-        if (password.length > 0) {
-          password = password.slice(0, -1)
-          process.stdout.write('\b \b')
+      try {
+        if (char === '\r' || char === '\n') {
+          cleanup()
+          resolve(password)
+        } else if (char === '') {
+          // Ctrl+C
+          cleanup(1)
+        } else if (char === '' || char === '') {
+          // Backspace / Delete
+          if (password.length > 0) {
+            password = password.slice(0, -1)
+            process.stderr.write('\b \b')
+          }
+        } else {
+          password += char
+          process.stderr.write('*')
         }
-      } else {
-        password += char
-        process.stdout.write('*')
+      } catch (err) {
+        cleanup()
+        reject(err)
       }
     }
     process.stdin.on('data', onData)
@@ -49,17 +58,20 @@ function promptPassword(question: string): Promise<string> {
 }
 
 export async function runSetup(mode: 'setup' | 'renew'): Promise<void> {
-  console.log('\n╔══════════════════════════════════════════╗')
-  console.log('║     Genome Auto-Bid MCP — Setup          ║')
-  console.log('╚══════════════════════════════════════════╝\n')
+  const out = (s: string) => process.stderr.write(s + '\n')
+
+  out('\n╔══════════════════════════════════════════╗')
+  out('║     Genome Auto-Bid MCP — Setup          ║')
+  out('╚══════════════════════════════════════════╝\n')
 
   const rpcHttpUrl =
     process.env.RPC_HTTP_URL ??
     (await prompt('Enter your Ethereum mainnet HTTP RPC URL (Alchemy/Infura): '))
 
-  const rpcWsUrl =
+  const rpcWsUrlRaw =
     process.env.RPC_WS_URL ??
     (await prompt('Enter your Ethereum mainnet WebSocket RPC URL (leave blank to skip): '))
+  const rpcWsUrl = rpcWsUrlRaw || undefined
 
   const maxEth = (await prompt('Default max bid per auction (ETH) [default: 0.5]: ')) || '0.5'
   const password = await promptPassword('Set an encryption password for the wallet key: ')
@@ -90,13 +102,12 @@ export async function runSetup(mode: 'setup' | 'renew'): Promise<void> {
 
   await saveConfig(config)
 
-  console.log('\n✓ Setup complete!')
-  console.log(`  Wallet address : ${walletAddress}`)
-  console.log('\n→ Fund your wallet by sending ETH to:')
-  console.log(`  ${walletAddress}`)
-  console.log('\n→ Add to your agent config:')
-  console.log(`
-{
+  out('\n✓ Setup complete!')
+  out(`  Wallet address : ${walletAddress}`)
+  out('\n→ Fund your wallet by sending ETH to:')
+  out(`  ${walletAddress}`)
+  out('\n→ Add to your agent config:')
+  out(`{
   "mcpServers": {
     "genome-bid": {
       "command": "npx",

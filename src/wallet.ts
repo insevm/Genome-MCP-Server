@@ -49,11 +49,15 @@ export async function sendBid(
   const publicClient = createPublicClient({ chain: mainnet, transport: http(config.rpcHttpUrl) })
 
   const multiplier = opts.gasPriorityMultiplier ?? 1
+  if (multiplier < 1 || multiplier > 20) {
+    throw new Error(`gasPriorityMultiplier must be between 1 and 20, got ${multiplier}`)
+  }
   let maxPriorityFeePerGas: bigint | undefined
 
   if (multiplier > 1) {
     const fees = await publicClient.estimateFeesPerGas()
-    maxPriorityFeePerGas = BigInt(Math.ceil(Number(fees.maxPriorityFeePerGas) * multiplier))
+    const multiplierBps = BigInt(Math.round(multiplier * 100))
+    maxPriorityFeePerGas = (fees.maxPriorityFeePerGas * multiplierBps) / 100n
   }
 
   const hash = await walletClient.sendTransaction({

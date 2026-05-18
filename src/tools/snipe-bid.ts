@@ -1,5 +1,6 @@
 import { startSnipe, getSnipeState, isInitialized } from '../bidder.js'
 import { loadConfig } from '../store.js'
+import { validatePositiveDecimal } from '../validate.js'
 import type { SnipeConfig } from '../types.js'
 
 interface SnipeBidArgs {
@@ -16,6 +17,8 @@ export async function handleSnipeBid(args: SnipeBidArgs): Promise<object> {
       'Bidder not initialized. Make sure GENOME_BID_PASSWORD is set in the MCP server env.',
     )
   }
+
+  validatePositiveDecimal(args.maxEth, 'maxEth')
 
   const config = await loadConfig()
   const snipeDefs = config.defaults.snipe

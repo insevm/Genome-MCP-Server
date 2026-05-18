@@ -48,6 +48,10 @@ export async function handleSwapGene(
 
   const { direction, slippageBps = 50, dryRun } = args
 
+  if (slippageBps < 0 || slippageBps > 10_000) {
+    throw new Error(`slippageBps must be between 0 and 10000, got ${slippageBps}`)
+  }
+
   if (args.ethAmount && args.geneAmount) {
     throw new Error('Provide either ethAmount or geneAmount, not both.')
   }
@@ -180,7 +184,7 @@ export async function handleSwapGene(
         args: [UNISWAP_SWAP_ROUTER, amount],
       }),
     })
-    await publicClient.waitForTransactionReceipt({ hash: approveTx })
+    await publicClient.waitForTransactionReceipt({ hash: approveTx, timeout: 120_000 })
   }
 
   if (args.geneAmount) {
