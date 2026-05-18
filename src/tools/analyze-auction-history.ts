@@ -2,6 +2,7 @@ import { createPublicClient, http, formatEther, parseAbiItem } from 'viem'
 import { mainnet } from 'viem/chains'
 import { loadConfig } from '../store.js'
 import { GENOME_CONTRACT, BLOCK_PER_MINT } from '../config.js'
+import { clampRounds, sanitizeRpcError } from '../validate.js'
 
 const BID_PLACED     = parseAbiItem('event BidPlaced(address indexed bidder, uint256 amount)')
 const AUCTION_SETTLED = parseAbiItem('event AuctionSettled(uint256 indexed tokenId, address indexed winner, uint256 bidAmount)')
@@ -22,11 +23,17 @@ interface RoundSummary {
 }
 
 export async function handleAnalyzeAuctionHistory(args: AnalyzeAuctionHistoryArgs): Promise<object> {
-  const rounds = Math.min(Math.max(Math.floor(args.rounds ?? 10), 1), 20)
+  const rounds = clampRounds(args.rounds, 10, 20)
   const config = await loadConfig()
   const client = createPublicClient({ chain: mainnet, transport: http(config.rpcHttpUrl) })
 
-  const currentBlock = await client.getBlockNumber()
+  let currentBlock: bigint
+  try {
+    currentBlock = await client.getBlockNumber()
+  } catch (err: unknown) {
+    return { error: `Failed to fetch block number: ${sanitizeRpcError(err, config.rpcHttpUrl)}` }
+  }
+
   // Add 2-round buffer to ensure enough settled events are captured
   const fromBlock = currentBlock - BigInt(rounds + 2) * BLOCK_PER_MINT
 
@@ -38,9 +45,7 @@ export async function handleAnalyzeAuctionHistory(args: AnalyzeAuctionHistoryArg
   try {
     fetchResult = await fetchLogs()
   } catch (err: unknown) {
-    const raw  = err instanceof Error ? err.message : String(err)
-    const safe = raw.replace(/https?:\/\/[^\s"']*/g, '<rpc-url>')
-    return { error: `Failed to fetch on-chain logs: ${safe}. Try reducing rounds or check your RPC provider limits.` }
+    return { error: `Failed to fetch on-chain logs: ${sanitizeRpcError(err, config.rpcHttpUrl)}. Try reducing rounds or check your RPC provider limits.` }
   }
   const [settledLogs, bidLogs] = fetchResult
 

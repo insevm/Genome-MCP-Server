@@ -12,3 +12,25 @@ export function validatePositiveDecimal(value: string, fieldName: string): void 
     throw new Error(`${fieldName} must be a positive decimal number (e.g. "0.1"), got: "${value}"`)
   }
 }
+
+export function clampRounds(value: unknown, defaultVal: number, max: number): number {
+  const n = typeof value === 'number' && Number.isFinite(value) ? value : defaultVal
+  return Math.min(Math.max(Math.floor(n), 1), max)
+}
+
+// Scrubs RPC URLs (which embed API keys) from error messages before they
+// reach the MCP stdio transport. Walks the error cause chain.
+export function sanitizeRpcError(err: unknown, rpcUrl: string): string {
+  const parts: string[] = []
+  let current: unknown = err
+  while (current instanceof Error) {
+    parts.push(current.message)
+    current = (current as NodeJS.ErrnoException & { cause?: unknown }).cause
+  }
+  if (typeof current === 'string') parts.push(current)
+  const raw = parts.join(' | ')
+  return raw
+    .replaceAll(rpcUrl, '<rpc-url>')
+    .replace(/wss?:\/\/[^\s"']*/g, '<rpc-url>')
+    .replace(/https?:\/\/[^\s"']*/g, '<rpc-url>')
+}

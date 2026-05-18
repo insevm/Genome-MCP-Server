@@ -2,7 +2,7 @@ import { createPublicClient, http, formatEther, parseAbiItem } from 'viem'
 import { mainnet } from 'viem/chains'
 import { loadConfig } from '../store.js'
 import { GENOME_CONTRACT, BLOCK_PER_MINT } from '../config.js'
-import { validateAddress } from '../validate.js'
+import { validateAddress, clampRounds, sanitizeRpcError } from '../validate.js'
 
 const BID_PLACED      = parseAbiItem('event BidPlaced(address indexed bidder, uint256 amount)')
 const AUCTION_SETTLED = parseAbiItem('event AuctionSettled(uint256 indexed tokenId, address indexed winner, uint256 bidAmount)')
@@ -22,12 +22,17 @@ interface ParticipatedRound {
 export async function handleAnalyzeBidder(args: AnalyzeBidderArgs): Promise<object> {
   validateAddress(args.address, 'address')
 
-  const rounds = Math.min(Math.max(Math.floor(args.rounds ?? 20), 1), 50)
+  const rounds = clampRounds(args.rounds, 20, 50)
   const config = await loadConfig()
   const client = createPublicClient({ chain: mainnet, transport: http(config.rpcHttpUrl) })
 
-  const currentBlock = await client.getBlockNumber()
-  const fromBlock    = currentBlock - BigInt(rounds + 2) * BLOCK_PER_MINT
+  let currentBlock: bigint
+  try {
+    currentBlock = await client.getBlockNumber()
+  } catch (err: unknown) {
+    return { error: `Failed to fetch block number: ${sanitizeRpcError(err, config.rpcHttpUrl)}` }
+  }
+  const fromBlock = currentBlock - BigInt(rounds + 2) * BLOCK_PER_MINT
 
   // Filter BidPlaced by bidder (indexed), fetch all settled events for round reconstruction
   const fetchLogs = () => Promise.all([
@@ -49,9 +54,7 @@ export async function handleAnalyzeBidder(args: AnalyzeBidderArgs): Promise<obje
   try {
     fetchResult = await fetchLogs()
   } catch (err: unknown) {
-    const raw  = err instanceof Error ? err.message : String(err)
-    const safe = raw.replace(/https?:\/\/[^\s"']*/g, '<rpc-url>')
-    return { error: `Failed to fetch on-chain logs: ${safe}. Try reducing rounds or check your RPC provider limits.` }
+    return { error: `Failed to fetch on-chain logs: ${sanitizeRpcError(err, config.rpcHttpUrl)}. Try reducing rounds or check your RPC provider limits.` }
   }
   const [bidLogs, settledLogs] = fetchResult
 
