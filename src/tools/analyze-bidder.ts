@@ -2,7 +2,6 @@ import { createPublicClient, http, formatEther, parseAbiItem } from 'viem'
 import { mainnet } from 'viem/chains'
 import { loadConfig } from '../store.js'
 import { GENOME_CONTRACT, BLOCK_PER_MINT } from '../config.js'
-import { isInitialized } from '../bidder.js'
 import { validateAddress } from '../validate.js'
 
 const BID_PLACED      = parseAbiItem('event BidPlaced(address indexed bidder, uint256 amount)')
@@ -21,11 +20,9 @@ interface ParticipatedRound {
 }
 
 export async function handleAnalyzeBidder(args: AnalyzeBidderArgs): Promise<object> {
-  if (!isInitialized()) throw new Error('Bidder not initialized. GENOME_BID_PASSWORD env var not set?')
-
   validateAddress(args.address, 'address')
 
-  const rounds = Math.min(args.rounds ?? 20, 50)
+  const rounds = Math.min(Math.max(Math.floor(args.rounds ?? 20), 1), 50)
   const config = await loadConfig()
   const client = createPublicClient({ chain: mainnet, transport: http(config.rpcHttpUrl) })
 
@@ -33,7 +30,7 @@ export async function handleAnalyzeBidder(args: AnalyzeBidderArgs): Promise<obje
   const fromBlock    = currentBlock - BigInt(rounds + 2) * BLOCK_PER_MINT
 
   // Filter BidPlaced by bidder (indexed), fetch all settled events for round reconstruction
-  const [bidLogs, settledLogs] = await Promise.all([
+  const fetchLogs = () => Promise.all([
     client.getLogs({
       address: GENOME_CONTRACT,
       event:   BID_PLACED,
@@ -48,6 +45,15 @@ export async function handleAnalyzeBidder(args: AnalyzeBidderArgs): Promise<obje
       toBlock: currentBlock,
     }),
   ])
+  let fetchResult: Awaited<ReturnType<typeof fetchLogs>>
+  try {
+    fetchResult = await fetchLogs()
+  } catch (err: unknown) {
+    const raw  = err instanceof Error ? err.message : String(err)
+    const safe = raw.replace(/https?:\/\/[^\s"']*/g, '<rpc-url>')
+    return { error: `Failed to fetch on-chain logs: ${safe}. Try reducing rounds or check your RPC provider limits.` }
+  }
+  const [bidLogs, settledLogs] = fetchResult
 
   if (bidLogs.length === 0) {
     return {

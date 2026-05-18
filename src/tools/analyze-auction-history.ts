@@ -2,7 +2,6 @@ import { createPublicClient, http, formatEther, parseAbiItem } from 'viem'
 import { mainnet } from 'viem/chains'
 import { loadConfig } from '../store.js'
 import { GENOME_CONTRACT, BLOCK_PER_MINT } from '../config.js'
-import { isInitialized } from '../bidder.js'
 
 const BID_PLACED     = parseAbiItem('event BidPlaced(address indexed bidder, uint256 amount)')
 const AUCTION_SETTLED = parseAbiItem('event AuctionSettled(uint256 indexed tokenId, address indexed winner, uint256 bidAmount)')
@@ -23,9 +22,7 @@ interface RoundSummary {
 }
 
 export async function handleAnalyzeAuctionHistory(args: AnalyzeAuctionHistoryArgs): Promise<object> {
-  if (!isInitialized()) throw new Error('Bidder not initialized. GENOME_BID_PASSWORD env var not set?')
-
-  const rounds = Math.min(args.rounds ?? 10, 20)
+  const rounds = Math.min(Math.max(Math.floor(args.rounds ?? 10), 1), 20)
   const config = await loadConfig()
   const client = createPublicClient({ chain: mainnet, transport: http(config.rpcHttpUrl) })
 
@@ -33,10 +30,19 @@ export async function handleAnalyzeAuctionHistory(args: AnalyzeAuctionHistoryArg
   // Add 2-round buffer to ensure enough settled events are captured
   const fromBlock = currentBlock - BigInt(rounds + 2) * BLOCK_PER_MINT
 
-  const [settledLogs, bidLogs] = await Promise.all([
+  const fetchLogs = () => Promise.all([
     client.getLogs({ address: GENOME_CONTRACT, event: AUCTION_SETTLED, fromBlock, toBlock: currentBlock }),
     client.getLogs({ address: GENOME_CONTRACT, event: BID_PLACED,      fromBlock, toBlock: currentBlock }),
   ])
+  let fetchResult: Awaited<ReturnType<typeof fetchLogs>>
+  try {
+    fetchResult = await fetchLogs()
+  } catch (err: unknown) {
+    const raw  = err instanceof Error ? err.message : String(err)
+    const safe = raw.replace(/https?:\/\/[^\s"']*/g, '<rpc-url>')
+    return { error: `Failed to fetch on-chain logs: ${safe}. Try reducing rounds or check your RPC provider limits.` }
+  }
+  const [settledLogs, bidLogs] = fetchResult
 
   if (settledLogs.length === 0) {
     return { error: 'No completed auction rounds found in block range. Try increasing rounds.' }
@@ -75,15 +81,18 @@ export async function handleAnalyzeAuctionHistory(args: AnalyzeAuctionHistoryArg
   })
 
   // Cross-round bidder stats
-  const bidderStats: Record<string, { bids: number; wins: number; maxBidEth: number }> = {}
+  const bidderStats: Record<string, { bids: number; wins: number; roundsEntered: number; maxBidEth: number }> = {}
   for (const round of roundsData) {
+    const biddersThisRound = new Set<string>()
     for (const bid of round.bids) {
-      if (!bidderStats[bid.bidder]) bidderStats[bid.bidder] = { bids: 0, wins: 0, maxBidEth: 0 }
+      if (!bidderStats[bid.bidder]) bidderStats[bid.bidder] = { bids: 0, wins: 0, roundsEntered: 0, maxBidEth: 0 }
       bidderStats[bid.bidder].bids++
       const amt = parseFloat(bid.amount)
       if (amt > bidderStats[bid.bidder].maxBidEth) bidderStats[bid.bidder].maxBidEth = amt
+      biddersThisRound.add(bid.bidder)
     }
-    if (!bidderStats[round.winner]) bidderStats[round.winner] = { bids: 0, wins: 0, maxBidEth: parseFloat(round.winningBid) }
+    for (const addr of biddersThisRound) bidderStats[addr].roundsEntered++
+    if (!bidderStats[round.winner]) bidderStats[round.winner] = { bids: 0, wins: 0, roundsEntered: 0, maxBidEth: parseFloat(round.winningBid) }
     bidderStats[round.winner].wins++
   }
 
@@ -92,10 +101,13 @@ export async function handleAnalyzeAuctionHistory(args: AnalyzeAuctionHistoryArg
     .slice(0, 8)
     .map(([address, s]) => ({
       address,
-      totalBids: s.bids,
-      wins:      s.wins,
-      winRate:   `${((s.wins / roundsData.length) * 100).toFixed(0)}%`,
-      maxBid:    `${s.maxBidEth.toFixed(6)} ETH`,
+      totalBids:      s.bids,
+      wins:           s.wins,
+      roundsEntered:  s.roundsEntered,
+      winRate:        s.roundsEntered > 0
+        ? `${((s.wins / s.roundsEntered) * 100).toFixed(0)}%`
+        : '0%',
+      maxBid:         `${s.maxBidEth.toFixed(6)} ETH`,
     }))
 
   const winningBids   = roundsData.map(r => parseFloat(r.winningBid))
