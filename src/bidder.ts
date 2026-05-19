@@ -122,6 +122,7 @@ async function tryBid(
   })
 
   const record: BidRecord = {
+    walletAddress: config.walletAddress,
     timestamp: new Date().toISOString(),
     txHash,
     bidEth,

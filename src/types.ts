@@ -18,6 +18,7 @@ export interface Config {
 }
 
 export interface BidRecord {
+  walletAddress: string
   timestamp: string
   txHash: string
   bidEth: string

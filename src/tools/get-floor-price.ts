@@ -108,12 +108,17 @@ export async function handleGetFloorPrice(): Promise<object> {
     poolAddress:      GENE_WETH_POOL,
     poolFeeTier:      `${poolFee / 10_000}%`,
     genePriceEth:     formatEther(genePriceWei) + ' ETH per GENE',
+    pricingMethod:    'spot Uniswap V3 quote for immediately selling the embedded GENE',
+    spotRecoveryEth:  formatEther(ethOutWei),
     floorPriceEth:    formatEther(ethOutWei),
+    caveats: [
+      'This is a spot estimate based on the current Uniswap pool quote.',
+      'It does not include bid gas, approval gas, swap gas, or any marketplace/exit costs.',
+      'It also does not account for slippage from your actual sell size or price movement after you win the auction.',
+    ],
     interpretation: [
-      `Bidding ${formatEther(ethOutWei)} ETH or less is risk-free: ` +
-      `you can sell the ${formatEther(embeddedWei)} GENE inside the NFT on Uniswap and fully recover your cost.`,
-      `Bidding above ${formatEther(ethOutWei)} ETH requires conviction that the NFT hold value ` +
-      `or future GENE price appreciation justifies the premium.`,
+      `The current spot estimate suggests roughly ${formatEther(ethOutWei)} ETH could be recovered by immediately selling the ${formatEther(embeddedWei)} GENE embedded in the next NFT.`,
+      `Treat ${formatEther(ethOutWei)} ETH as a reference point rather than a guaranteed risk-free floor, because real recovery depends on gas costs, slippage, and future pool prices.`,
     ],
   }
 }

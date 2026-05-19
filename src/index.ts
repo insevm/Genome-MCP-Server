@@ -79,7 +79,8 @@ const TOOLS: Tool[] = [
   },
   {
     name: 'get_bid_history',
-    description: 'List recent bids placed by this wallet.',
+    description:
+      'List recent bid submissions recorded locally by this MCP server and tagged with the current wallet address. This is not a full on-chain history and does not backfill final win/outbid results.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -124,11 +125,10 @@ const TOOLS: Tool[] = [
   {
     name: 'get_floor_price',
     description:
-      'Calculate the break-even bid price for the next Genome NFT auction. ' +
+      'Estimate the current spot break-even bid price for the next Genome NFT auction. ' +
       'Reads the GENE embedded in the next NFT (based on the current halving era), ' +
-      'then quotes selling that GENE on Uniswap V3 to get the ETH recovery value. ' +
-      'Any bid at or below this floor price is risk-free — the embedded GENE can be sold ' +
-      'to fully recover the cost. Use this before setting maxEth in start_auto_bid.',
+      'then quotes selling that GENE on Uniswap V3 to estimate the ETH recovery value at current pool prices. ' +
+      'This estimate does not include bid gas, sell gas, or future price movement/slippage. Use it as a reference before setting maxEth.',
     inputSchema: { type: 'object', properties: {}, required: [] },
   },
   {

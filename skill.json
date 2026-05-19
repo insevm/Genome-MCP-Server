@@ -18,6 +18,10 @@
     "get_snipe_status",
     "get_bid_history",
     "get_wallet_info",
+    "get_floor_price",
+    "analyze_auction_history",
+    "analyze_bidder",
+    "swap_gene",
     "withdraw_eth",
     "withdraw_gene"
   ],

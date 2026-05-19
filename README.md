@@ -167,10 +167,30 @@ Snipe the Genome auction in the final seconds, up to 0.35 ETH
 Show my current Genome snipe status
 ```
 
+### Estimate current floor price
+
+```
+Estimate the current Genome floor price before I bid
+```
+
+> This is a spot estimate based on the current Uniswap quote for selling the embedded GENE in the next NFT. It does not include gas, slippage drift, or future price movement.
+
 ### Run monitoring and snipe together
 
 ```
 Start auto-bid on Genome (cap 0.3 ETH) and also snipe with up to 0.35 ETH at the end
+```
+
+### Analyze recent auction history
+
+```
+Analyze the last 10 Genome auction rounds
+```
+
+### Profile a competitor
+
+```
+Analyze how 0xABC... has been bidding in recent Genome auctions
 ```
 
 ### Buy GENE on Uniswap
@@ -199,10 +219,10 @@ Withdraw 0.1 ETH from my Genome wallet to 0xABC...
 Send all my GENE tokens to 0xABC...
 ```
 
-### View bid history
+### View local bid submission history
 
 ```
-Show my last 10 Genome bids
+Show the recent bid submissions this Genome server has recorded for me
 ```
 
 ### Stop auto-bidding
@@ -285,8 +305,9 @@ Genome contract / Uniswap V3
 ```
 ~/.genome-bid/
 ├── session.key    # AES-GCM encrypted — requires GENOME_BID_PASSWORD to decrypt
-├── config.json    # Wallet address, RPC URLs, defaults (no secrets)
-└── history.jsonl  # Bid history, one JSON record per line
+├── config.json    # Wallet address and strategy defaults (no secrets)
+├── rpc.json       # RPC URLs, stored separately because they may contain API keys
+└── history.jsonl  # Local bid submission history written by this MCP server, tagged by wallet
 ```
 
 ---
@@ -317,6 +338,14 @@ No. The Genome contract fixes the deadline at `lastMintBlock + 104` blocks (~20 
 
 It quotes the current price from Uniswap's on-chain QuoterV2 contract before every swap, then applies your configured slippage tolerance (default 0.5%) to set the minimum output or maximum input. The transaction reverts on-chain if the price moves beyond that tolerance.
 
+**Q: What exactly does get_bid_history show?**
+
+It shows the recent bid submissions recorded locally by this MCP server in `~/.genome-bid/history.jsonl` and tagged with the current wallet address. It is not a full on-chain bidding history, it does not currently backfill whether each bid eventually won or was outbid, and older history lines written before wallet tagging are ignored.
+
+**Q: Is get_floor_price a guaranteed risk-free floor?**
+
+No. It is a spot estimate based on the current Uniswap quote for selling the embedded GENE in the next NFT. Real recovery can differ because of gas costs, slippage, and price movement after you win.
+
 ---
 
 ## Local Data
@@ -324,5 +353,6 @@ It quotes the current price from Uniswap's on-chain QuoterV2 contract before eve
 | File | Contents |
 | ---- | -------- |
 | `~/.genome-bid/session.key` | AES-GCM encrypted wallet key |
-| `~/.genome-bid/config.json` | Wallet address, RPC URLs, defaults (no secrets) |
-| `~/.genome-bid/history.jsonl` | Bid history, one JSON record per line |
+| `~/.genome-bid/config.json` | Wallet address and strategy defaults (no secrets) |
+| `~/.genome-bid/rpc.json` | RPC URLs, stored separately because they may contain API keys |
+| `~/.genome-bid/history.jsonl` | Local bid submission history tagged by wallet, one JSON record per line |

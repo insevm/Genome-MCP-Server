@@ -113,13 +113,29 @@ export async function appendBidRecord(record: BidRecord): Promise<void> {
   await fs.appendFile(HISTORY_FILE, JSON.stringify(record) + '\n', 'utf8')
 }
 
-export async function readBidHistory(limit: number): Promise<BidRecord[]> {
+export async function readBidHistory(limit: number, walletAddress: string): Promise<BidRecord[]> {
   try {
     const raw   = await fs.readFile(HISTORY_FILE, 'utf8')
     const lines = raw.trim().split('\n').filter(Boolean)
     return lines
+      .map((line) => {
+        try {
+          return JSON.parse(line) as Partial<BidRecord>
+        } catch {
+          return null
+        }
+      })
+      .filter((record): record is BidRecord => {
+        return record !== null
+          && typeof record.walletAddress === 'string'
+          && typeof record.timestamp === 'string'
+          && typeof record.txHash === 'string'
+          && typeof record.bidEth === 'string'
+          && typeof record.tokenId === 'number'
+          && (record.result === 'won' || record.result === 'outbid' || record.result === 'pending')
+          && record.walletAddress.toLowerCase() === walletAddress.toLowerCase()
+      })
       .slice(-limit)
-      .map(l => JSON.parse(l) as BidRecord)
       .reverse()
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return []
