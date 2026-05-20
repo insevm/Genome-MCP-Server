@@ -73,12 +73,21 @@ export async function runSetup(mode: 'setup' | 'renew'): Promise<void> {
     (await prompt('Enter your Ethereum mainnet WebSocket RPC URL (leave blank to skip): '))
   const rpcWsUrl = rpcWsUrlRaw || undefined
 
-  const maxEth = (await prompt('Default max bid per auction (ETH) [default: 0.5]: ')) || '0.5'
-  const password = await promptPassword('Set an encryption password for the wallet key: ')
-  const passwordConfirm = await promptPassword('Confirm encryption password: ')
-  if (password !== passwordConfirm) {
-    out('Passwords do not match. Aborting setup.')
-    process.exit(1)
+  const maxEth =
+    process.env.GENOME_BID_MAX_ETH ??
+    ((await prompt('Default max bid per auction (ETH) [default: 0.5]: ')) || '0.5')
+
+  let password: string
+  if (process.env.GENOME_BID_PASSWORD) {
+    password = process.env.GENOME_BID_PASSWORD
+    out('Using GENOME_BID_PASSWORD from environment (non-interactive mode).')
+  } else {
+    password = await promptPassword('Set an encryption password for the wallet key: ')
+    const passwordConfirm = await promptPassword('Confirm encryption password: ')
+    if (password !== passwordConfirm) {
+      out('Passwords do not match. Aborting setup.')
+      process.exit(1)
+    }
   }
 
   const privateKey = generateWalletKey()
