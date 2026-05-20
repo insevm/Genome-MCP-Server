@@ -6,7 +6,7 @@ import {
   ListToolsRequestSchema,
   type Tool,
 } from '@modelcontextprotocol/sdk/types.js'
-import { configExists, loadConfig, loadSessionKey } from './store.js'
+import { configExists, loadConfig, loadSessionKey, setRpcConfig } from './store.js'
 import { initBidder } from './bidder.js'
 import { getBidStatus } from './tools/get-bid-status.js'
 import { handlePlaceBid } from './tools/place-bid.js'
@@ -205,21 +205,34 @@ const TOOLS: Tool[] = [
 let _privateKey: `0x${string}` | null = null
 
 async function main() {
+  const rpcHttpUrl = process.env.GENOME_RPC_HTTP_URL
+  const rpcWsUrl = process.env.GENOME_RPC_WS_URL
+  const password = process.env.GENOME_BID_PASSWORD
+
+  if (!rpcHttpUrl) {
+    process.stderr.write('[genome-bid-mcp] GENOME_RPC_HTTP_URL env var not set — all tools will fail.\n')
+  } else {
+    try {
+      setRpcConfig(rpcHttpUrl, rpcWsUrl)
+    } catch (err) {
+      process.stderr.write(`[genome-bid-mcp] Invalid RPC config: ${(err as Error).message}\n`)
+    }
+  }
+
   const exists = await configExists()
   if (!exists) {
     process.stderr.write('[genome-bid-mcp] No config found. Run: npx genome-bid-mcp setup\n')
   } else {
-    const password = process.env.GENOME_BID_PASSWORD
     if (!password) {
       process.stderr.write('[genome-bid-mcp] GENOME_BID_PASSWORD env var not set — bid tools will fail.\n')
-    } else {
+    } else if (rpcHttpUrl) {
       try {
         const [config, privateKey] = await Promise.all([loadConfig(), loadSessionKey(password)])
         _privateKey = privateKey as `0x${string}`
         initBidder(_privateKey, config)
         process.stderr.write(`[genome-bid-mcp] Ready. Wallet: ${config.walletAddress}\n`)
       } catch (err) {
-        process.stderr.write(`[genome-bid-mcp] Failed to load wallet key: ${(err as Error).message}\n`)
+        process.stderr.write(`[genome-bid-mcp] Failed to initialize: ${(err as Error).message}\n`)
       }
     }
   }

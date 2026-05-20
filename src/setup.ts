@@ -65,11 +65,11 @@ export async function runSetup(mode: 'setup' | 'renew'): Promise<void> {
   out('╚══════════════════════════════════════════╝\n')
 
   const rpcHttpUrl =
-    process.env.RPC_HTTP_URL ??
+    process.env.GENOME_RPC_HTTP_URL ??
     (await prompt('Enter your Ethereum mainnet HTTP RPC URL (Alchemy/Infura): '))
 
   const rpcWsUrlRaw =
-    process.env.RPC_WS_URL ??
+    process.env.GENOME_RPC_WS_URL ??
     (await prompt('Enter your Ethereum mainnet WebSocket RPC URL (leave blank to skip): '))
   const rpcWsUrl = rpcWsUrlRaw || undefined
 
@@ -105,14 +105,16 @@ export async function runSetup(mode: 'setup' | 'renew'): Promise<void> {
   out(`  Wallet address : ${walletAddress}`)
   out('\n→ Fund your wallet by sending ETH to:')
   out(`  ${walletAddress}`)
-  out('\n→ Add to your agent config:')
+  out('\n→ Add to your agent config (fill in your actual RPC URLs and password):')
   out(`{
   "mcpServers": {
     "genome-bid": {
       "command": "npx",
       "args": ["genome-bid-mcp"],
       "env": {
-        "GENOME_BID_PASSWORD": "<your-password>"
+        "GENOME_BID_PASSWORD": "<your-password>",
+        "GENOME_RPC_HTTP_URL": "<your-http-rpc-url>",
+        "GENOME_RPC_WS_URL": "<your-ws-rpc-url-or-leave-empty>"
       }
     }
   }

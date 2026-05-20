@@ -3,6 +3,7 @@ import { mainnet } from 'viem/chains'
 import { GENOME_CONTRACT, GENOME_ABI, BLOCK_PER_MINT } from './config.js'
 import { sendBid, makePublicClient } from './wallet.js'
 import { appendBidRecord } from './store.js'
+import { sanitizeRpcError } from './validate.js'
 import type { Config, AuctionStatus, AutoBidConfig, SnipeConfig, BidRecord } from './types.js'
 
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000'
@@ -220,8 +221,9 @@ export function startAutoBid(cfg: AutoBidConfig): { ok: boolean; message: string
       const txHash = await tryBid(status, newBid, { gasStrategy: bidCfg.gasStrategy, dryRun: bidCfg.dryRun })
       state.autoBid.lastAction = `bid ${newBid} ETH tx:${txHash}`
     } catch (err) {
-      state.autoBid.lastError = (err as Error).message
-      state.autoBid.lastAction = `error: ${(err as Error).message}`
+      const msg = sanitizeRpcError(err, state.appConfig?.rpcHttpUrl ?? '')
+      state.autoBid.lastError = msg
+      state.autoBid.lastAction = `error: ${msg}`
     }
   }
 
@@ -343,9 +345,10 @@ export function startSnipe(cfg: SnipeConfig): { ok: boolean; message: string } {
       state.snipe.stopReason = 'bid submitted'
       _stopSnipeWatcher()
     } catch (err) {
+      const msg = sanitizeRpcError(err, config.rpcHttpUrl)
       state.snipe.status = 'failed'
-      state.snipe.lastError = (err as Error).message
-      state.snipe.lastDecision = `error: ${(err as Error).message}`
+      state.snipe.lastError = msg
+      state.snipe.lastDecision = `error: ${msg}`
       state.snipe.stopReason = 'runtime error'
       _stopSnipeWatcher()
     } finally {
@@ -358,7 +361,7 @@ export function startSnipe(cfg: SnipeConfig): { ok: boolean; message: string } {
     state.snipe.unwatch = wsClient.watchBlocks({
       onBlock: () => { void onBlock() },
       onError: (err) => {
-        const message = `watchBlocks error: ${err.message}`
+        const message = `watchBlocks error: ${sanitizeRpcError(err, config.rpcHttpUrl)}`
         state.snipe.lastError = message
         state.snipe.lastDecision = message
         state.snipe.status = 'failed'

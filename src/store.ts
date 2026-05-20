@@ -9,11 +9,33 @@ import type { Config, BidRecord } from './types.js'
 const STORAGE_DIR = join(homedir(), '.genome-bid')
 const SESSION_KEY_FILE = join(STORAGE_DIR, 'session.key')
 const CONFIG_FILE = join(STORAGE_DIR, 'config.json')
-const RPC_FILE = join(STORAGE_DIR, 'rpc.json')
 export const HISTORY_FILE = join(STORAGE_DIR, 'history.jsonl')
 
 const SALT_LEN  = 16
 const NONCE_LEN = 12
+
+// Module-level RPC config — set once at startup via setRpcConfig(), never persisted.
+let _rpcHttpUrl: string | undefined
+let _rpcWsUrl: string | undefined
+
+function assertHttpUrl(value: string, name: string): void {
+  if (!/^https?:\/\/.+/.test(value)) {
+    throw new Error(`${name} must be an http:// or https:// URL.`)
+  }
+}
+
+function assertWsUrl(value: string, name: string): void {
+  if (!/^wss?:\/\/.+/.test(value)) {
+    throw new Error(`${name} must be a ws:// or wss:// URL.`)
+  }
+}
+
+export function setRpcConfig(httpUrl: string, wsUrl?: string): void {
+  assertHttpUrl(httpUrl, 'GENOME_RPC_HTTP_URL')
+  if (wsUrl) assertWsUrl(wsUrl, 'GENOME_RPC_WS_URL')
+  _rpcHttpUrl = httpUrl
+  _rpcWsUrl = wsUrl
+}
 
 async function ensureDir(): Promise<void> {
   await fs.mkdir(STORAGE_DIR, { recursive: true, mode: 0o700 })
@@ -72,36 +94,34 @@ export async function loadSessionKey(password: string): Promise<string> {
   }
 }
 
-// RPC URLs contain API keys — stored separately so the wallet config blob is safe to inspect
 export async function saveConfig(config: Config): Promise<void> {
   await ensureDir()
-  const { rpcHttpUrl, rpcWsUrl, ...walletConfig } = config
+  // RPC URLs embed API keys — not persisted; provided via GENOME_RPC_HTTP_URL env var at runtime.
+  const { rpcHttpUrl: _rpcHttpUrl, rpcWsUrl: _rpcWsUrl, ...walletConfig } = config
   await fs.writeFile(CONFIG_FILE, JSON.stringify(walletConfig, null, 2), { encoding: 'utf8', mode: 0o600 })
   await fs.chmod(CONFIG_FILE, 0o600)
-  await fs.writeFile(RPC_FILE, JSON.stringify({ rpcHttpUrl, rpcWsUrl }, null, 2), { encoding: 'utf8', mode: 0o600 })
-  await fs.chmod(RPC_FILE, 0o600)
 }
 
 export async function loadConfig(): Promise<Config> {
-  const [rawConfig, rawRpc] = await Promise.all([
-    fs.readFile(CONFIG_FILE, 'utf8'),
-    fs.readFile(RPC_FILE, 'utf8').catch(() => {
-      throw new Error('RPC config missing. Re-run `npx genome-bid-mcp setup` to regenerate.')
-    }),
-  ])
-  const config = JSON.parse(rawConfig)
-  const rpc = JSON.parse(rawRpc)
+  const raw = await fs.readFile(CONFIG_FILE, 'utf8').catch(() => {
+    throw new Error('Config missing. Run: npx genome-bid-mcp setup')
+  })
+  const config = JSON.parse(raw)
 
-  if (!config.walletAddress || !config.defaults || !rpc.rpcHttpUrl) {
+  if (!config.walletAddress || !config.defaults) {
     throw new Error('Config is incomplete or corrupted. Re-run `npx genome-bid-mcp setup`.')
   }
 
-  return { ...config, ...rpc } as Config
+  if (!_rpcHttpUrl) {
+    throw new Error('RPC not initialized. Ensure GENOME_RPC_HTTP_URL is set and the server is restarted.')
+  }
+
+  return { ...config, rpcHttpUrl: _rpcHttpUrl, rpcWsUrl: _rpcWsUrl } as Config
 }
 
 export async function configExists(): Promise<boolean> {
   try {
-    await Promise.all([fs.access(CONFIG_FILE), fs.access(RPC_FILE)])
+    await fs.access(CONFIG_FILE)
     return true
   } catch {
     return false
