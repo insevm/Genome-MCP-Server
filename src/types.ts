@@ -16,6 +16,16 @@ export interface Config {
   }
 }
 
+export interface BidEvent {
+  type: 'bid_placed' | 'max_eth_exceeded' | 'error'
+  strategy: 'auto-bid' | 'snipe'
+  timestamp: string
+  message: string
+  tokenId?: number
+  txHash?: string
+  bidEth?: string
+}
+
 export interface BidRecord {
   walletAddress: string
   timestamp: string

@@ -4,9 +4,20 @@ import { GENOME_CONTRACT, GENOME_ABI, BLOCK_PER_MINT } from './config.js'
 import { sendBid, makePublicClient } from './wallet.js'
 import { appendBidRecord } from './store.js'
 import { sanitizeRpcError } from './validate.js'
-import type { Config, AuctionStatus, AutoBidConfig, SnipeConfig, BidRecord } from './types.js'
+import type { Config, AuctionStatus, AutoBidConfig, SnipeConfig, BidRecord, BidEvent } from './types.js'
 
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000'
+const EVENT_QUEUE_MAX = 100
+
+// Global event queue shared by all strategies
+const _eventQueue: BidEvent[] = []
+
+// Set once after server is created in index.ts
+let _notifyFn: ((level: 'info' | 'warning' | 'error', message: string) => void) | null = null
+
+export function setNotifyFn(fn: typeof _notifyFn): void {
+  _notifyFn = fn
+}
 
 interface BidderState {
   privateKey: Hex | null
@@ -76,6 +87,24 @@ const state: BidderState = {
     stopReason: undefined,
     lastError: undefined,
   },
+}
+
+function pushEvent(event: BidEvent): void {
+  // Deduplicate consecutive events with the same type and message to avoid queue spam
+  const last = _eventQueue[_eventQueue.length - 1]
+  if (last?.type === event.type && last?.message === event.message) return
+
+  _eventQueue.push(event)
+  if (_eventQueue.length > EVENT_QUEUE_MAX) _eventQueue.shift()
+
+  const level = event.type === 'error' ? 'error' : 'info'
+  _notifyFn?.(level, event.message)
+}
+
+export function drainBidEvents(): BidEvent[] {
+  const events = [..._eventQueue]
+  _eventQueue.length = 0
+  return events
 }
 
 export function initBidder(privateKey: Hex, config: Config): void {
@@ -195,6 +224,7 @@ export function startAutoBid(cfg: AutoBidConfig): { ok: boolean; message: string
   state.autoBid.sessionBidCount = 0
   state.autoBid.sessionEthSpentWei = 0n
   state.autoBid.stoppedAt = undefined
+  _eventQueue.length = 0
 
   let inFlight = false
   const tick = async () => {
@@ -232,8 +262,9 @@ export function startAutoBid(cfg: AutoBidConfig): { ok: boolean; message: string
 
       const newBidWei = parseEther(status.minBidToOutbid)
       if (newBidWei > parseEther(bidCfg.maxEth)) {
-        state.autoBid.lastAction =
-          `minimum outbid ${status.minBidToOutbid} ETH exceeds max ${bidCfg.maxEth} ETH`
+        const msg = `minimum outbid ${status.minBidToOutbid} ETH exceeds max ${bidCfg.maxEth} ETH`
+        state.autoBid.lastAction = msg
+        pushEvent({ type: 'max_eth_exceeded', strategy: 'auto-bid', timestamp: new Date().toISOString(), message: `[auto-bid] ${msg}`, tokenId: status.latestTokenId })
         return
       }
 
@@ -243,12 +274,22 @@ export function startAutoBid(cfg: AutoBidConfig): { ok: boolean; message: string
         state.autoBid.lastTxHash = txHash
         state.autoBid.sessionBidCount++
         state.autoBid.sessionEthSpentWei += parseEther(newBid)
+        pushEvent({
+          type: 'bid_placed',
+          strategy: 'auto-bid',
+          timestamp: new Date().toISOString(),
+          message: `[auto-bid] Bid placed: ${newBid} ETH for token #${status.latestTokenId} — tx: ${txHash}`,
+          tokenId: status.latestTokenId,
+          txHash,
+          bidEth: newBid,
+        })
       }
       state.autoBid.lastAction = `bid ${newBid} ETH tx:${txHash}`
     } catch (err) {
       const msg = sanitizeRpcError(err, state.appConfig!.rpcHttpUrl)
       state.autoBid.lastError = msg
       state.autoBid.lastAction = `error: ${msg}`
+      pushEvent({ type: 'error', strategy: 'auto-bid', timestamp: new Date().toISOString(), message: `[auto-bid] Error: ${msg}` })
     } finally {
       inFlight = false
     }
@@ -320,6 +361,7 @@ export function startSnipe(cfg: SnipeConfig): { ok: boolean; message: string } {
   state.snipe.lastDecision = 'watching for trigger window'
   state.snipe.stopReason = undefined
   state.snipe.lastError = undefined
+  _eventQueue.length = 0
 
   let inFlight = false
 
@@ -366,9 +408,11 @@ export function startSnipe(cfg: SnipeConfig): { ok: boolean; message: string } {
       }
 
       if (newBidWei > parseEther(snipeCfg.maxEth)) {
+        const msg = `next bid ${newBid} ETH exceeds max ${snipeCfg.maxEth} ETH`
         state.snipe.status = 'failed'
-        state.snipe.lastDecision = `next bid ${newBid} ETH exceeds max ${snipeCfg.maxEth} ETH`
+        state.snipe.lastDecision = msg
         state.snipe.stopReason = 'required bid exceeded maxEth'
+        pushEvent({ type: 'max_eth_exceeded', strategy: 'snipe', timestamp: new Date().toISOString(), message: `[snipe] ${msg}`, tokenId: status.latestTokenId })
         _stopSnipeWatcher()
         return
       }
@@ -385,6 +429,17 @@ export function startSnipe(cfg: SnipeConfig): { ok: boolean; message: string } {
       state.snipe.txHash = txHash
       state.snipe.lastDecision = `submitted bid ${newBid} ETH tx:${txHash}`
       state.snipe.stopReason = 'bid submitted'
+      if (!snipeCfg.dryRun) {
+        pushEvent({
+          type: 'bid_placed',
+          strategy: 'snipe',
+          timestamp: new Date().toISOString(),
+          message: `[snipe] Bid placed: ${newBid} ETH for token #${status.latestTokenId} — tx: ${txHash}`,
+          tokenId: status.latestTokenId,
+          txHash,
+          bidEth: newBid,
+        })
+      }
       _stopSnipeWatcher()
     } catch (err) {
       const msg = sanitizeRpcError(err, config.rpcHttpUrl)
@@ -392,6 +447,7 @@ export function startSnipe(cfg: SnipeConfig): { ok: boolean; message: string } {
       state.snipe.lastError = msg
       state.snipe.lastDecision = `error: ${msg}`
       state.snipe.stopReason = 'runtime error'
+      pushEvent({ type: 'error', strategy: 'snipe', timestamp: new Date().toISOString(), message: `[snipe] Error: ${msg}` })
       _stopSnipeWatcher()
     } finally {
       inFlight = false
@@ -408,6 +464,7 @@ export function startSnipe(cfg: SnipeConfig): { ok: boolean; message: string } {
         state.snipe.lastDecision = message
         state.snipe.status = 'failed'
         state.snipe.stopReason = 'watchBlocks error'
+        pushEvent({ type: 'error', strategy: 'snipe', timestamp: new Date().toISOString(), message: `[snipe] ${message}` })
         _stopSnipeWatcher()
       },
     })

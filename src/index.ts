@@ -8,7 +8,7 @@ import {
 } from '@modelcontextprotocol/sdk/types.js'
 import { configExists, loadConfig, loadSessionKey, setRpcConfig } from './store.js'
 import { sanitizeRpcError } from './validate.js'
-import { initBidder } from './bidder.js'
+import { initBidder, setNotifyFn } from './bidder.js'
 import { getBidStatus } from './tools/get-bid-status.js'
 import { handlePlaceBid } from './tools/place-bid.js'
 import { handleStartAutoBid } from './tools/start-auto-bid.js'
@@ -24,6 +24,7 @@ import { handleSwapGene } from './tools/swap-gene.js'
 import { handleAnalyzeAuctionHistory } from './tools/analyze-auction-history.js'
 import { handleAnalyzeBidder } from './tools/analyze-bidder.js'
 import { handleGetFloorPrice } from './tools/get-floor-price.js'
+import { handleGetBidEvents } from './tools/get-bid-events.js'
 
 if (process.argv[2] === 'setup' || process.argv[2] === 'renew') {
   const { runSetup } = await import('./setup.js')
@@ -77,6 +78,15 @@ const TOOLS: Tool[] = [
     name: 'get_auto_bid_status',
     description:
       'Inspect the current auto-bid monitor state: whether it is running, the active config, the last action taken, the latest observed auction snapshot, and any recent error.',
+    inputSchema: { type: 'object', properties: {}, required: [] },
+  },
+  {
+    name: 'get_bid_events',
+    description:
+      'Drain and return all unread bidding events since the last call. Covers both auto-bid and snipe strategies. ' +
+      'Event types: bid_placed (transaction submitted), max_eth_exceeded (required bid exceeded maxEth limit), error (runtime failure). ' +
+      'Each event includes a strategy field ("auto-bid" or "snipe"). The queue is cleared on each call. ' +
+      'Poll this tool periodically while any bidding strategy is active to stay informed of activity.',
     inputSchema: { type: 'object', properties: {}, required: [] },
   },
   {
@@ -240,8 +250,15 @@ async function main() {
 
   const server = new Server(
     { name: 'genome-bid-mcp', version: '0.2.0' },
-    { capabilities: { tools: {} } },
+    { capabilities: { tools: {}, logging: {} } },
   )
+
+  setNotifyFn((level, message) => {
+    server.notification({
+      method: 'notifications/message',
+      params: { level, logger: 'genome-auto-bid', data: message },
+    }).catch(() => { /* client may not support logging notifications */ })
+  })
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: TOOLS }))
 
@@ -267,6 +284,9 @@ async function main() {
           break
         case 'get_auto_bid_status':
           result = await handleGetAutoBidStatus()
+          break
+        case 'get_bid_events':
+          result = handleGetBidEvents()
           break
         case 'snipe_bid':
           result = await handleSnipeBid(args as unknown as Parameters<typeof handleSnipeBid>[0])
