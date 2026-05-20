@@ -11,10 +11,10 @@ import {
   WETH9,
 } from '../config.js'
 
-// Each mint produces 5000 GENE in Era 0, split 50/50: half to LP, half to the NFT holder.
-// This constant represents only the NFT holder's share (what can be recovered by selling).
-// Halves every 2100 NFTs (EPOCH_LENGTH). Computed in wei for fractional precision.
-const GENE_PER_NFT_ERA0_WEI = parseEther('2500')
+// Total GENE minted per NFT in Era 0. Halves every epoch per the halving schedule.
+// Era 0 only: 50% goes to TokenLocker (LP), 50% goes to the NFT holder.
+// Era 1+: 100% goes to the NFT holder — no LP split from Epoch 1 onward.
+const GENE_PER_NFT_TOTAL_ERA0_WEI = parseEther('5000')
 const EPOCH_LENGTH = 2100n
 const MAX_ERA = 10n          // EPOCH_LENGTH * MAX_ERA = 21,000 total NFTs
 const MAX_TOKEN_ID = 21_000  // hard cap
@@ -22,7 +22,8 @@ const MAX_TOKEN_ID = 21_000  // hard cap
 function geneEmbeddedWei(tokenId: bigint): bigint {
   const era = tokenId / EPOCH_LENGTH
   if (era >= MAX_ERA) return 0n
-  return GENE_PER_NFT_ERA0_WEI >> era
+  const totalForEra = GENE_PER_NFT_TOTAL_ERA0_WEI >> era
+  return era === 0n ? totalForEra / 2n : totalForEra
 }
 
 const POOL_FEE_ABI = [parseAbiItem('function fee() view returns (uint24)')]
@@ -90,6 +91,9 @@ export async function handleGetFloorPrice(): Promise<object> {
     throw new Error('All 21,000 NFTs have been minted. GENE issuance is complete.')
   }
 
+  const totalMintedWei = GENE_PER_NFT_TOTAL_ERA0_WEI >> era
+  const lpWei = totalMintedWei - embeddedWei  // 0 for era 1+
+
   let ethOutWei: bigint
   try {
     ethOutWei = await quoteGeneToEth(client, embeddedWei, poolFee, config.rpcHttpUrl)
@@ -99,13 +103,17 @@ export async function handleGetFloorPrice(): Promise<object> {
 
   const genePriceWei = (ethOutWei * 10n ** 18n) / embeddedWei
 
+  const embeddedNote = era === 0n
+    ? `Era 0: each mint produces ${formatEther(totalMintedWei)} GENE total — ${formatEther(embeddedWei)} GENE goes to the NFT holder (recoverable), ${formatEther(lpWei)} GENE goes to the liquidity pool (50/50 split, Epoch 0 only).`
+    : `Era ${Number(era)}: each mint produces ${formatEther(totalMintedWei)} GENE total — all ${formatEther(embeddedWei)} GENE goes to the NFT holder (recoverable). No LP split from Era 1 onward.`
+
   return {
     nextTokenId:      Number(nextTokenId),
     currentEra:       Number(era),
     minted:           Number(latestTokenId),
     remaining:        MAX_TOKEN_ID - Number(latestTokenId),
     geneEmbedded:     formatEther(embeddedWei) + ' GENE',
-    geneEmbeddedNote: `Era ${era}: each mint produces ${formatEther(embeddedWei * 2n)} GENE total — ${formatEther(embeddedWei)} GENE goes to the NFT holder (recoverable), ${formatEther(embeddedWei)} GENE goes to the liquidity pool.`,
+    geneEmbeddedNote: embeddedNote,
     poolAddress:      GENE_WETH_POOL,
     poolFeeTier:      `${poolFee / 10_000}%`,
     genePriceEth:     formatEther(genePriceWei) + ' ETH per GENE',
