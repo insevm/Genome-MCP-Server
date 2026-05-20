@@ -46,7 +46,8 @@ export async function sendBid(
   if (opts.dryRun) return `dry-run:bid:${bidEth}ETH`
 
   const walletClient = makeWalletClient(config, privateKey, opts.usePrivateMempool)
-  const publicClient = createPublicClient({ chain: mainnet, transport: http(config.rpcHttpUrl) })
+  const rpcUrl = opts.usePrivateMempool ? FLASHBOTS_RPC : config.rpcHttpUrl
+  const publicClient = createPublicClient({ chain: mainnet, transport: http(rpcUrl) })
 
   const multiplier = opts.gasPriorityMultiplier ?? 1
   if (multiplier < 1 || multiplier > 20) {
