@@ -350,26 +350,68 @@ export function startBidWatcher(cfg: BidWatcherConfig): { ok: boolean; message: 
   }
 
   if (config.rpcWsUrl) {
-    const wsClient = makePublicClient(config)
-    state.watcher.unwatch = wsClient.watchBlocks({
-      onBlock: () => { void onBlock() },
-      onError: (err) => {
-        const errMsg = sanitizeRpcError(err, config.rpcHttpUrl)
-        const warnMsg = `WebSocket error, falling back to HTTP polling: ${errMsg}`
-        process.stderr.write(`[genome-bid-mcp] [bid] ${warnMsg}\n`)
-        state.watcher.lastError = errMsg
-        state.watcher.transport = 'http-polling'
-        state.watcher.lastDecision = 'WebSocket dropped, continuing via HTTP polling'
-        const wsUnwatch = state.watcher.unwatch
-        state.watcher.unwatch = null
-        // Assign new unwatch before calling the old one to close the re-entrancy gap
-        const id = setInterval(() => { void onBlock() }, 3_000)
-        state.watcher.unwatch = () => clearInterval(id)
+    let heartbeatId: ReturnType<typeof setInterval> | null = null
+    let reconnectAttempts = 0
+    const MAX_RECONNECT = 3
+
+    const startWs = () => {
+      if (!state.watcher.active) return
+
+      const wsClient = makePublicClient(config)
+      let wsUnwatch: (() => void) | null = null
+
+      // Heartbeat: ping every 30s to prevent Alchemy/provider idle-timeout disconnects
+      heartbeatId = setInterval(() => {
+        wsClient.getBlockNumber().catch(() => {})
+      }, 30_000)
+
+      wsUnwatch = wsClient.watchBlocks({
+        onBlock: () => {
+          reconnectAttempts = 0  // successful block resets the retry counter
+          void onBlock()
+        },
+        onError: (err) => {
+          if (heartbeatId) { clearInterval(heartbeatId); heartbeatId = null }
+          if (!state.watcher.active) return
+
+          reconnectAttempts++
+          const errMsg = sanitizeRpcError(err, config.rpcHttpUrl)
+
+          // Clean up the dead viem subscription before installing a new unwatch
+          wsUnwatch?.()
+          wsUnwatch = null
+
+          if (reconnectAttempts <= MAX_RECONNECT) {
+            const delay = 2_000 * reconnectAttempts  // 2s, 4s, 6s
+            const label = `${reconnectAttempts}/${MAX_RECONNECT}`
+            process.stderr.write(`[genome-bid-mcp] [bid] WebSocket error (${label}), reconnecting in ${delay / 1_000}s: ${errMsg}\n`)
+            state.watcher.lastError = errMsg
+            state.watcher.lastDecision = `WebSocket dropped, reconnecting (${label})`
+            const timer = setTimeout(startWs, delay)
+            state.watcher.unwatch = () => clearTimeout(timer)
+          } else {
+            reconnectAttempts = 0
+            const warnMsg = `WebSocket failed after ${MAX_RECONNECT} retries, falling back to HTTP polling: ${errMsg}`
+            process.stderr.write(`[genome-bid-mcp] [bid] ${warnMsg}\n`)
+            state.watcher.lastError = errMsg
+            state.watcher.transport = 'http-polling'
+            state.watcher.lastDecision = 'WebSocket failed after retries, continuing via HTTP polling'
+            const pollId = setInterval(() => { void onBlock() }, 3_000)
+            state.watcher.unwatch = () => clearInterval(pollId)
+            pushEvent({ type: 'error', strategy: 'bid-watcher', timestamp: new Date().toISOString(), message: `[bid] ${warnMsg}` })
+            void onBlock()
+          }
+        },
+      })
+
+      state.watcher.transport = 'websocket'
+      state.watcher.unwatch = () => {
+        if (heartbeatId) { clearInterval(heartbeatId); heartbeatId = null }
         wsUnwatch?.()
-        pushEvent({ type: 'error', strategy: 'bid-watcher', timestamp: new Date().toISOString(), message: `[bid] ${warnMsg}` })
-        void onBlock()
-      },
-    })
+      }
+    }
+
+    startWs()
   } else {
     process.stderr.write('[genome-bid-mcp] No rpcWsUrl — bid watcher using HTTP polling (3s)\n')
     state.watcher.lastDecision = 'watching via HTTP polling (rpcWsUrl not configured)'

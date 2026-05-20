@@ -30,8 +30,28 @@ export function sanitizeRpcError(err: unknown, rpcUrl: string): string {
   if (typeof current === 'string') {
     parts.push(current)
   } else if (current !== null && current !== undefined) {
-    // Non-Error, non-string tail — covers WS error events and Error cause chains ending in objects
-    try { parts.push(JSON.stringify(current)) } catch { parts.push(String(current)) }
+    // Non-Error objects: CloseEvent / ErrorEvent have non-enumerable properties that JSON.stringify misses.
+    // Probe known WS event fields explicitly before falling back.
+    const obj = current as Record<string, unknown>
+    const tag = (current as object).constructor?.name
+    const detail = [
+      typeof obj.message === 'string' && obj.message ? obj.message : null,
+      typeof obj.code    !== 'undefined'              ? `code=${String(obj.code)}`     : null,
+      typeof obj.reason  === 'string' && obj.reason   ? `reason=${obj.reason}`         : null,
+      typeof obj.type    === 'string' && obj.type     ? `type=${obj.type}`             : null,
+      tag && tag !== 'Object'                         ? `(${tag})`                     : null,
+    ].filter((x): x is string => x !== null).join(' ')
+
+    if (detail) {
+      parts.push(detail)
+    } else {
+      try {
+        const json = JSON.stringify(current)
+        parts.push(json !== '{}' ? json : `[object ${tag ?? 'unknown'}]`)
+      } catch {
+        parts.push(String(current))
+      }
+    }
   }
   const raw = parts.join(' | ')
   const withLiteral = rpcUrl ? raw.replaceAll(rpcUrl, '<rpc-url>') : raw
