@@ -29,8 +29,8 @@ export function sanitizeRpcError(err: unknown, rpcUrl: string): string {
   }
   if (typeof current === 'string') parts.push(current)
   const raw = parts.join(' | ')
-  return raw
-    .replaceAll(rpcUrl, '<rpc-url>')
+  const withLiteral = rpcUrl ? raw.replaceAll(rpcUrl, '<rpc-url>') : raw
+  return withLiteral
     .replace(/wss?:\/\/[^\s"']*/g, '<rpc-url>')
     .replace(/https?:\/\/[^\s"']*/g, '<rpc-url>')
 }
