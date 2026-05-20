@@ -7,6 +7,7 @@ import {
   type Tool,
 } from '@modelcontextprotocol/sdk/types.js'
 import { configExists, loadConfig, loadSessionKey, setRpcConfig } from './store.js'
+import { sanitizeRpcError } from './validate.js'
 import { initBidder } from './bidder.js'
 import { getBidStatus } from './tools/get-bid-status.js'
 import { handlePlaceBid } from './tools/place-bid.js'
@@ -309,7 +310,7 @@ async function main() {
 
       return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] }
     } catch (err) {
-      return { content: [{ type: 'text', text: `Error: ${(err as Error).message}` }], isError: true }
+      return { content: [{ type: 'text', text: `Error: ${sanitizeRpcError(err, '')}` }], isError: true }
     }
   })
 
