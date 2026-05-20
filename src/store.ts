@@ -112,11 +112,26 @@ export async function loadConfig(): Promise<Config> {
     throw new Error('Config is incomplete or corrupted. Re-run `npx genome-bid-mcp setup`.')
   }
 
+  // Migrate old config format (snipe + leadBlocks + gasStrategy → bid)
+  const defaults = (config.defaults as Record<string, unknown>).snipe && !config.defaults.bid
+    ? (() => {
+        const old = (config.defaults as Record<string, unknown>).snipe as Record<string, unknown>
+        return {
+          ...config.defaults,
+          bid: {
+            triggerBlocks:         (old.triggerBlocks         as number)  ?? 1,
+            gasPriorityMultiplier: (old.gasPriorityMultiplier as number)  ?? 5,
+            usePrivateMempool:     (old.usePrivateMempool     as boolean) ?? false,
+          },
+        }
+      })()
+    : config.defaults
+
   if (!_rpcHttpUrl) {
     throw new Error('RPC not initialized. Ensure GENOME_RPC_HTTP_URL is set and the server is restarted.')
   }
 
-  return { ...config, rpcHttpUrl: _rpcHttpUrl, rpcWsUrl: _rpcWsUrl } as Config
+  return { ...config, defaults, rpcHttpUrl: _rpcHttpUrl, rpcWsUrl: _rpcWsUrl } as Config
 }
 
 export async function configExists(): Promise<boolean> {

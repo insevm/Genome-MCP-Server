@@ -116,9 +116,7 @@ export async function runSetup(mode: 'setup' | 'renew'): Promise<void> {
     rpcHttpUrl,
     defaults: {
       maxEth,
-      leadBlocks: 2,
-      gasStrategy: 'normal',
-      snipe: {
+      bid: {
         triggerBlocks: 1,
         gasPriorityMultiplier: 5.0,
         usePrivateMempool: false,

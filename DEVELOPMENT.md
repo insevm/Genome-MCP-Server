@@ -148,38 +148,24 @@ Place a single 0.3 ETH bid on Genome
 Submit one bid on Genome for exactly 0.28 ETH through Flashbots
 ```
 
-### Start continuous monitoring
+### Start the bid watcher
 
 ```
-Watch the Genome auction and automatically outbid anyone who beats me, cap at 0.3 ETH
+Watch the Genome auction and bid up to 0.3 ETH — enter at min price if no one is bidding, snipe if there's competition
 ```
 
-> Auto-bid uses the contract's live `minBidToOutbid` rule when deciding the next valid bid, rather than a fixed increment.
+> The bid watcher uses a two-phase strategy: if no one has bid when the trigger window opens, it enters at the contract minimum with normal gas (first-mover); if a competitor is present, it fires a snipe bid with aggressive gas at the contract-required `minBidToOutbid`.
 
-### Snipe at end of auction
-
-```
-Snipe the Genome auction in the final seconds, up to 0.35 ETH
-```
-
-> Snipe mode fires in the last block before the deadline (~12 seconds on Ethereum), bids at the contract's live `minBidToOutbid`, and uses 5× priority fee plus Flashbots Protect to prevent MEV frontrunning.
-
-### Inspect snipe watcher status
+### Inspect bid watcher status
 
 ```
-Show my current Genome snipe status
+Show my Genome bid watcher status
 ```
 
-### Inspect auto-bid monitor status
+### Stop the bid watcher
 
 ```
-Show my current Genome auto-bid status
-```
-
-### Stop snipe watcher
-
-```
-Stop my current Genome snipe watcher
+Stop my Genome bid watcher
 ```
 
 ### Estimate current floor price
@@ -189,12 +175,6 @@ Estimate the current Genome floor price before I bid
 ```
 
 > This is a spot estimate based on the current Uniswap quote for selling the embedded GENE in the next NFT. It does not include gas, slippage drift, or future price movement.
-
-### Run monitoring and snipe together
-
-```
-Start auto-bid on Genome (cap 0.3 ETH) and also snipe with up to 0.35 ETH at the end
-```
 
 ### Analyze recent auction history
 
@@ -240,10 +220,10 @@ Send all my GENE tokens to 0xABC...
 Show the recent bid submissions this Genome server has recorded for me
 ```
 
-### Stop auto-bidding
+### Stop the bid watcher
 
 ```
-Stop the Genome auto-bid
+Stop my Genome bid watcher
 ```
 
 ---
@@ -321,7 +301,6 @@ Genome contract / Uniswap V3
 ~/.genome-bid/
 ├── session.key    # AES-GCM encrypted — requires GENOME_BID_PASSWORD to decrypt
 ├── config.json    # Wallet address and strategy defaults (no secrets)
-├── rpc.json       # RPC URLs, stored separately because they may contain API keys
 └── history.jsonl  # Local bid submission history written by this MCP server, tagged by wallet
 ```
 
@@ -341,9 +320,9 @@ Use the `withdraw_eth` or `withdraw_gene` MCP tools directly from your agent.
 
 HTTP is used for sending transactions. WebSocket enables real-time block monitoring for precise snipe timing. If you only have HTTP, snipe works but polls at slightly higher latency.
 
-**Q: Does snipe_bid require a Flashbots API key?**
+**Q: Does start_bid require a Flashbots API key?**
 
-No. `usePrivateMempool: true` (the default) uses `https://rpc.flashbots.net`, which requires no registration.
+No. `usePrivateMempool: true` uses `https://rpc.flashbots.net`, which requires no registration. It is `false` by default — public mempool is used unless you opt in.
 
 **Q: Does a new bid extend the auction deadline?**
 
@@ -369,5 +348,4 @@ No. It is a spot estimate based on the current Uniswap quote for selling the emb
 | ---- | -------- |
 | `~/.genome-bid/session.key` | AES-GCM encrypted wallet key |
 | `~/.genome-bid/config.json` | Wallet address and strategy defaults (no secrets) |
-| `~/.genome-bid/rpc.json` | RPC URLs, stored separately because they may contain API keys |
 | `~/.genome-bid/history.jsonl` | Local bid submission history tagged by wallet, one JSON record per line |

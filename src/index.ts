@@ -11,11 +11,9 @@ import { sanitizeRpcError } from './validate.js'
 import { initBidder, setNotifyFn } from './bidder.js'
 import { getBidStatus } from './tools/get-bid-status.js'
 import { handlePlaceBid } from './tools/place-bid.js'
-import { handleStartAutoBid } from './tools/start-auto-bid.js'
-import { handleStopAutoBid } from './tools/stop-auto-bid.js'
-import { handleGetAutoBidStatus } from './tools/get-auto-bid-status.js'
-import { handleSnipeBid, handleGetSnipeStatus } from './tools/snipe-bid.js'
-import { handleStopSnipe } from './tools/stop-snipe.js'
+import { handleStartBid } from './tools/start-bid.js'
+import { handleStopBid } from './tools/stop-bid.js'
+import { handleGetBidWatcher } from './tools/get-bid-watcher.js'
 import { handleGetBidHistory } from './tools/get-bid-history.js'
 import { handleGetWalletInfo } from './tools/get-wallet-info.js'
 import { handleWithdrawEth } from './tools/withdraw-eth.js'
@@ -55,66 +53,41 @@ const TOOLS: Tool[] = [
     },
   },
   {
-    name: 'start_auto_bid',
+    name: 'start_bid',
     description:
-      'Start an automatic bid monitor. Watches the auction and, within the leadBlocks window, bids the contract-required minBidToOutbid whenever the wallet is outbid, up to maxEth. Runs in the background until stop_auto_bid is called. Use for auctions where you want continuous protection throughout the round. Cannot run simultaneously with snipe_bid.',
+      'Start the unified bid watcher. Two-phase strategy: if no one else has bid when the trigger window opens, enters at the minimum price with normal gas (first-mover); if a competitor is present, fires a snipe bid with aggressive gas at the contract-required minBidToOutbid. ' +
+      'Uses WebSocket block subscription when available, falls back to HTTP polling (3 s interval). ' +
+      'Runs until the bid fires, maxEth is exceeded, or stop_bid is called. Use get_bid_watcher_status to monitor progress.',
     inputSchema: {
       type: 'object',
       properties: {
         maxEth: { type: 'string', description: 'Maximum bid in ETH, e.g. "0.3"' },
-        leadBlocks: { type: 'number', description: 'Re-bid when this many blocks remain before deadline, default 2' },
-        gasStrategy: { type: 'string', enum: ['normal', 'fast'], description: 'Gas strategy: normal (default) or fast (2× priority fee)' },
+        triggerBlocks: { type: 'number', description: 'Enter the bidding window when this many blocks remain before deadline. Default 1.' },
+        gasPriorityMultiplier: { type: 'number', description: 'Multiply maxPriorityFeePerGas by this factor for snipe bids. Default 5.0. Range 1–20. Use analyze_auction_history snipeWindowGas to calibrate.' },
+        minPriorityFeeGwei: { type: 'number', description: 'Absolute floor for maxPriorityFeePerGas in gwei (snipe bids). Overrides multiplier when higher. Useful when base fee is very low.' },
+        usePrivateMempool: { type: 'boolean', description: 'Submit snipe bid via Flashbots Protect instead of the public mempool. Default false.' },
         dryRun: { type: 'boolean', description: 'Simulate without sending transactions' },
       },
       required: ['maxEth'],
     },
   },
   {
-    name: 'stop_auto_bid',
-    description: 'Stop the automatic bid monitor.',
+    name: 'stop_bid',
+    description: 'Stop the active bid watcher.',
     inputSchema: { type: 'object', properties: {}, required: [] },
   },
   {
-    name: 'get_auto_bid_status',
+    name: 'get_bid_watcher_status',
     description:
-      'Inspect the current auto-bid monitor state: whether it is running, the active config, the last action taken, the latest observed auction snapshot, and any recent error.',
+      'Inspect the current bid watcher state: active config, transport mode (WebSocket or HTTP polling), latest observed auction snapshot, trigger-window progress, candidate next bid, and any error or stop reason.',
     inputSchema: { type: 'object', properties: {}, required: [] },
   },
   {
     name: 'get_bid_events',
     description:
-      'Drain and return all unread bidding events since the last call. Covers both auto-bid and snipe strategies. ' +
+      'Drain and return all unread bidding events since the last call. ' +
       'Event types: bid_placed (transaction submitted), max_eth_exceeded (required bid exceeded maxEth limit), error (runtime failure). ' +
-      'Each event includes a strategy field ("auto-bid" or "snipe"). The queue is cleared on each call. ' +
-      'Poll this tool periodically while any bidding strategy is active to stay informed of activity.',
-    inputSchema: { type: 'object', properties: {}, required: [] },
-  },
-  {
-    name: 'snipe_bid',
-    description:
-      'End-of-auction snipe strategy. Fires a single bid at the contract-required minBidToOutbid in the final N blocks with aggressive gas and Flashbots private mempool. Use when you want to avoid revealing intent early. Cannot run simultaneously with start_auto_bid — stop one before starting the other.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        maxEth: { type: 'string', description: 'Maximum bid in ETH' },
-        triggerBlocks: { type: 'number', description: 'Fire when this many blocks remain before deadline. Default 1.' },
-        gasPriorityMultiplier: { type: 'number', description: 'Multiply maxPriorityFeePerGas by this factor. Default 5.0. Range 1-20.' },
-        minPriorityFeeGwei: { type: 'number', description: 'Absolute floor for maxPriorityFeePerGas in gwei. Overrides multiplier when higher. Use analyze_auction_history to see recent snipe-window gas and set this above the competition.' },
-        usePrivateMempool: { type: 'boolean', description: 'Submit via Flashbots Protect. Default false.' },
-        dryRun: { type: 'boolean', description: 'Simulate without sending transactions' },
-      },
-      required: ['maxEth'],
-    },
-  },
-  {
-    name: 'get_snipe_status',
-    description:
-      'Inspect the current snipe watcher state: active config, transport mode, latest observed auction snapshot, trigger-window progress, candidate next bid, and any error or stop reason.',
-    inputSchema: { type: 'object', properties: {}, required: [] },
-  },
-  {
-    name: 'stop_snipe',
-    description: 'Stop the current snipe watcher and clear its active runtime state.',
+      'The queue is cleared on each call. Poll this tool periodically while the bid watcher is active to stay informed of activity.',
     inputSchema: { type: 'object', properties: {}, required: [] },
   },
   {
@@ -277,26 +250,17 @@ async function main() {
           if (!_privateKey) throw new Error('Wallet key not loaded. GENOME_BID_PASSWORD set?')
           result = await handlePlaceBid(args as unknown as Parameters<typeof handlePlaceBid>[0], _privateKey)
           break
-        case 'start_auto_bid':
-          result = await handleStartAutoBid(args as unknown as Parameters<typeof handleStartAutoBid>[0])
+        case 'start_bid':
+          result = await handleStartBid(args as unknown as Parameters<typeof handleStartBid>[0])
           break
-        case 'stop_auto_bid':
-          result = handleStopAutoBid()
+        case 'stop_bid':
+          result = handleStopBid()
           break
-        case 'get_auto_bid_status':
-          result = await handleGetAutoBidStatus()
+        case 'get_bid_watcher_status':
+          result = handleGetBidWatcher()
           break
         case 'get_bid_events':
           result = handleGetBidEvents()
-          break
-        case 'snipe_bid':
-          result = await handleSnipeBid(args as unknown as Parameters<typeof handleSnipeBid>[0])
-          break
-        case 'get_snipe_status':
-          result = handleGetSnipeStatus()
-          break
-        case 'stop_snipe':
-          result = handleStopSnipe()
           break
         case 'get_bid_history':
           result = await handleGetBidHistory(args as unknown as Parameters<typeof handleGetBidHistory>[0])

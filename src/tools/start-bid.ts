@@ -1,9 +1,8 @@
-import { startSnipe, getSnipeState, isInitialized } from '../bidder.js'
+import { startBidWatcher, getBidWatcherState, isInitialized } from '../bidder.js'
 import { loadConfig } from '../store.js'
-import { validatePositiveDecimal } from '../validate.js'
-import type { SnipeConfig } from '../types.js'
+import type { BidWatcherConfig } from '../types.js'
 
-interface SnipeBidArgs {
+interface StartBidArgs {
   maxEth: string
   triggerBlocks?: number
   gasPriorityMultiplier?: number
@@ -12,14 +11,16 @@ interface SnipeBidArgs {
   dryRun?: boolean
 }
 
-export async function handleSnipeBid(args: SnipeBidArgs): Promise<object> {
+export async function handleStartBid(args: StartBidArgs): Promise<object> {
   if (!isInitialized()) {
     throw new Error(
       'Bidder not initialized. Make sure GENOME_BID_PASSWORD is set in the MCP server env.',
     )
   }
 
-  validatePositiveDecimal(args.maxEth, 'maxEth')
+  if (!/^\d+(\.\d{0,18})?$/.test(args.maxEth) || Number(args.maxEth) <= 0) {
+    throw new Error('maxEth must be a positive decimal number (e.g. "0.1")')
+  }
 
   if (
     args.triggerBlocks !== undefined &&
@@ -45,32 +46,29 @@ export async function handleSnipeBid(args: SnipeBidArgs): Promise<object> {
   }
 
   const config = await loadConfig()
-  const snipeDefs = config.defaults.snipe
+  const bidDefs = config.defaults.bid
 
-  const snipeConfig: SnipeConfig = {
+  const watcherConfig: BidWatcherConfig = {
     maxEth: args.maxEth,
-    triggerBlocks: args.triggerBlocks ?? snipeDefs.triggerBlocks,
-    gasPriorityMultiplier: args.gasPriorityMultiplier ?? snipeDefs.gasPriorityMultiplier,
-    minPriorityFeeGwei: args.minPriorityFeeGwei,
-    usePrivateMempool: args.usePrivateMempool ?? snipeDefs.usePrivateMempool,
+    triggerBlocks: args.triggerBlocks ?? bidDefs.triggerBlocks,
+    gasPriorityMultiplier: args.gasPriorityMultiplier ?? bidDefs.gasPriorityMultiplier,
+    minPriorityFeeGwei: args.minPriorityFeeGwei ?? bidDefs.minPriorityFeeGwei,
+    usePrivateMempool: args.usePrivateMempool ?? bidDefs.usePrivateMempool,
     dryRun: args.dryRun ?? false,
   }
 
-  const result = startSnipe(snipeConfig)
+  const result = startBidWatcher(watcherConfig)
   if (!result.ok) throw new Error(result.message)
 
-  const snipeState = getSnipeState()
+  const watcherState = getBidWatcherState()
 
   return {
-    status: snipeState.status,
-    config: snipeConfig,
+    status: watcherState.status,
+    transport: watcherState.transport,
+    config: watcherConfig,
     walletAddress: config.walletAddress,
-    note: snipeConfig.usePrivateMempool
+    strategy: watcherConfig.usePrivateMempool
       ? 'Tx will be submitted via Flashbots Protect to avoid MEV frontrun'
       : 'Tx will be submitted via public mempool',
   }
-}
-
-export function handleGetSnipeStatus(): object {
-  return getSnipeState()
 }

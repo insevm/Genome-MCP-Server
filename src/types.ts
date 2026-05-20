@@ -6,11 +6,10 @@ export interface Config {
   rpcHttpUrl: string
   defaults: {
     maxEth: string
-    leadBlocks: number
-    gasStrategy: 'normal' | 'fast'
-    snipe: {
+    bid: {
       triggerBlocks: number
       gasPriorityMultiplier: number
+      minPriorityFeeGwei?: number
       usePrivateMempool: boolean
     }
   }
@@ -18,7 +17,7 @@ export interface Config {
 
 export interface BidEvent {
   type: 'bid_placed' | 'max_eth_exceeded' | 'error'
-  strategy: 'auto-bid' | 'snipe'
+  strategy: 'bid-watcher'
   timestamp: string
   message: string
   tokenId?: number
@@ -48,18 +47,33 @@ export interface AuctionStatus {
   isUserWinning: boolean
 }
 
-export interface AutoBidConfig {
-  maxEth: string
-  leadBlocks: number
-  gasStrategy: 'normal' | 'fast'
-  dryRun: boolean
-}
-
-export interface SnipeConfig {
+export interface BidWatcherConfig {
   maxEth: string
   triggerBlocks: number
   gasPriorityMultiplier: number
   minPriorityFeeGwei?: number
   usePrivateMempool: boolean
   dryRun: boolean
+}
+
+export interface BidWatcherSnapshot {
+  initialized: boolean
+  walletAddress: string | undefined
+  active: boolean
+  transport: 'websocket' | 'http-polling' | null
+  status: 'idle' | 'watching' | 'first_bid_placed' | 'fired' | 'won' | 'failed'
+  config: BidWatcherConfig | null
+  txHash: string | undefined
+  firstBidTxHash: string | undefined
+  triggeredAtBlock: number | undefined
+  triggeredAt: string | undefined
+  lastCheckedAt: string | undefined
+  lastDecision: string
+  stopReason: string | undefined
+  lastError: string | undefined
+  stoppedAt: string | undefined
+  nextBidEth: string | undefined
+  lastObservedAuction: AuctionStatus | undefined
+  blocksUntilTrigger: number | undefined
+  triggerWindowReached: boolean | undefined
 }

@@ -4,15 +4,13 @@ import { GENOME_CONTRACT, GENOME_ABI, BLOCK_PER_MINT } from './config.js'
 import { sendBid, makePublicClient } from './wallet.js'
 import { appendBidRecord } from './store.js'
 import { sanitizeRpcError } from './validate.js'
-import type { Config, AuctionStatus, AutoBidConfig, SnipeConfig, BidRecord, BidEvent } from './types.js'
+import type { Config, AuctionStatus, BidWatcherConfig, BidWatcherSnapshot, BidRecord, BidEvent } from './types.js'
 
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000'
 const EVENT_QUEUE_MAX = 100
 
-// Global event queue shared by all strategies
 const _eventQueue: BidEvent[] = []
 
-// Set once after server is created in index.ts
 let _notifyFn: ((level: 'info' | 'warning' | 'error', message: string) => void) | null = null
 
 export function setNotifyFn(fn: typeof _notifyFn): void {
@@ -22,27 +20,14 @@ export function setNotifyFn(fn: typeof _notifyFn): void {
 interface BidderState {
   privateKey: Hex | null
   appConfig: Config | null
-  autoBid: {
-    running: boolean
-    config: AutoBidConfig | null
-    intervalId: ReturnType<typeof setInterval> | null
-    lastAction: string
-    lastCheckedAt: string | undefined
-    lastObservedAuction: AuctionStatus | undefined
-    nextBidEth: string | undefined
-    lastTxHash: string | undefined
-    lastError: string | undefined
-    sessionBidCount: number
-    sessionEthSpentWei: bigint
-    stoppedAt: string | undefined
-  }
-  snipe: {
-    watching: boolean
-    config: SnipeConfig | null
+  watcher: {
+    active: boolean
+    config: BidWatcherConfig | null
     unwatch: (() => void) | null
     transport: 'websocket' | 'http-polling' | null
-    status: 'idle' | 'watching' | 'fired' | 'won' | 'failed'
+    status: 'idle' | 'watching' | 'first_bid_placed' | 'fired' | 'won' | 'failed'
     txHash: string | undefined
+    firstBidTxHash: string | undefined
     triggeredAtBlock: number | undefined
     triggeredAt: string | undefined
     lastCheckedAt: string | undefined
@@ -51,33 +36,21 @@ interface BidderState {
     lastDecision: string
     stopReason: string | undefined
     lastError: string | undefined
+    stoppedAt: string | undefined
   }
 }
 
 const state: BidderState = {
   privateKey: null,
   appConfig: null,
-  autoBid: {
-    running: false,
-    config: null,
-    intervalId: null,
-    lastAction: 'not started',
-    lastCheckedAt: undefined,
-    lastObservedAuction: undefined,
-    nextBidEth: undefined,
-    lastTxHash: undefined,
-    lastError: undefined,
-    sessionBidCount: 0,
-    sessionEthSpentWei: 0n,
-    stoppedAt: undefined,
-  },
-  snipe: {
-    watching: false,
+  watcher: {
+    active: false,
     config: null,
     unwatch: null,
     transport: null,
     status: 'idle',
     txHash: undefined,
+    firstBidTxHash: undefined,
     triggeredAtBlock: undefined,
     triggeredAt: undefined,
     lastCheckedAt: undefined,
@@ -86,17 +59,15 @@ const state: BidderState = {
     lastDecision: 'not started',
     stopReason: undefined,
     lastError: undefined,
+    stoppedAt: undefined,
   },
 }
 
 function pushEvent(event: BidEvent): void {
-  // Deduplicate consecutive events with the same type and message to avoid queue spam
   const last = _eventQueue[_eventQueue.length - 1]
   if (last?.type === event.type && last?.message === event.message) return
-
   _eventQueue.push(event)
   if (_eventQueue.length > EVENT_QUEUE_MAX) _eventQueue.shift()
-
   const level = event.type === 'error' ? 'error' : 'info'
   _notifyFn?.(level, event.message)
 }
@@ -142,9 +113,6 @@ export async function getAuctionStatus(
   const blocksRemaining = Math.max(0, deadlineBlock - Number(currentBlock))
   let effectiveMinBidToOutbidWei = minBidToOutbidWei as bigint
 
-  // Genome uses lazy settlement. Once an auction has expired with an existing
-  // winner, the next executable bid settles the old round and starts a fresh
-  // one, so the real minimum becomes MIN_BID rather than the stale outbid price.
   if (blocksRemaining <= 0 && winner.toLowerCase() !== ZERO_ADDRESS) {
     effectiveMinBidToOutbidWei = await client.readContract({
       address: GENOME_CONTRACT,
@@ -170,7 +138,6 @@ async function tryBid(
   status: AuctionStatus,
   bidEth: string,
   opts: {
-    gasStrategy?: 'normal' | 'fast'
     usePrivateMempool?: boolean
     gasPriorityMultiplier?: number
     minPriorityFeeGwei?: number
@@ -183,7 +150,7 @@ async function tryBid(
   const txHash = await sendBid(config, key, bidEth, {
     dryRun: opts.dryRun,
     usePrivateMempool: opts.usePrivateMempool,
-    gasPriorityMultiplier: opts.gasPriorityMultiplier ?? (opts.gasStrategy === 'fast' ? 2 : 1),
+    gasPriorityMultiplier: opts.gasPriorityMultiplier ?? 1,
     minPriorityFeeGwei: opts.minPriorityFeeGwei,
   })
 
@@ -207,249 +174,176 @@ async function tryBid(
   return txHash
 }
 
-// ── Auto-bid ──────────────────────────────────────────────────────────────────
+// ── Bid Watcher helpers ───────────────────────────────────────────────────────
 
-export function startAutoBid(cfg: AutoBidConfig): { ok: boolean; message: string } {
-  if (state.autoBid.running) return { ok: false, message: 'auto-bid already running' }
-  if (state.snipe.watching) return { ok: false, message: 'snipe is already watching — stop it first with stop_snipe' }
+function _resetForNewRound(): void {
+  state.watcher.status = 'watching'
+  state.watcher.txHash = undefined
+  state.watcher.firstBidTxHash = undefined
+  state.watcher.triggeredAtBlock = undefined
+  state.watcher.triggeredAt = undefined
+  state.watcher.nextBidEth = undefined
+  state.watcher.lastDecision = 'auction settled, waiting for next round'
+}
+
+async function _handleFirstMover(status: AuctionStatus, watchCfg: BidWatcherConfig): Promise<void> {
+  const txHash = await tryBid(status, status.minBidToOutbid, {
+    gasPriorityMultiplier: 1,
+    dryRun: watchCfg.dryRun,
+  })
+  state.watcher.firstBidTxHash = txHash
+  state.watcher.status = 'first_bid_placed'
+  state.watcher.lastDecision = `entered at ${status.minBidToOutbid} ETH (no competition)`
+  if (!watchCfg.dryRun) {
+    pushEvent({
+      type: 'bid_placed',
+      strategy: 'bid-watcher',
+      timestamp: new Date().toISOString(),
+      message: `[bid] First bid ${status.minBidToOutbid} ETH for token #${status.latestTokenId} — tx: ${txHash}`,
+      tokenId: status.latestTokenId,
+      txHash,
+      bidEth: status.minBidToOutbid,
+    })
+  }
+}
+
+async function _handleSnipe(
+  status: AuctionStatus,
+  watchCfg: BidWatcherConfig,
+  checkedAt: string,
+): Promise<void> {
+  const newBidWei = parseEther(status.minBidToOutbid)
+  if (newBidWei > parseEther(watchCfg.maxEth)) {
+    const msg = `next bid ${status.minBidToOutbid} ETH exceeds max ${watchCfg.maxEth} ETH`
+    state.watcher.status = 'failed'
+    state.watcher.lastDecision = msg
+    state.watcher.stopReason = 'required bid exceeded maxEth'
+    pushEvent({
+      type: 'max_eth_exceeded',
+      strategy: 'bid-watcher',
+      timestamp: new Date().toISOString(),
+      message: `[bid] ${msg}`,
+      tokenId: status.latestTokenId,
+    })
+    _stopWatcher()
+    return
+  }
+
+  state.watcher.triggeredAtBlock = status.currentBlock
+  state.watcher.triggeredAt = checkedAt
+  state.watcher.lastDecision = `submitting snipe bid ${status.minBidToOutbid} ETH`
+
+  const txHash = await tryBid(status, status.minBidToOutbid, {
+    usePrivateMempool: watchCfg.usePrivateMempool,
+    gasPriorityMultiplier: watchCfg.gasPriorityMultiplier,
+    minPriorityFeeGwei: watchCfg.minPriorityFeeGwei,
+    dryRun: watchCfg.dryRun,
+  })
+
+  // Set status AFTER the tx resolves so observers never see 'fired' without a txHash
+  state.watcher.status = 'fired'
+  state.watcher.txHash = txHash
+  state.watcher.lastDecision = `snipe bid submitted: ${status.minBidToOutbid} ETH tx:${txHash}`
+  state.watcher.stopReason = 'snipe bid submitted'
+
+  if (!watchCfg.dryRun) {
+    pushEvent({
+      type: 'bid_placed',
+      strategy: 'bid-watcher',
+      timestamp: new Date().toISOString(),
+      message: `[bid] Snipe bid ${status.minBidToOutbid} ETH for token #${status.latestTokenId} — tx: ${txHash}`,
+      tokenId: status.latestTokenId,
+      txHash,
+      bidEth: status.minBidToOutbid,
+    })
+  }
+  _stopWatcher()
+}
+
+// ── Bid Watcher ───────────────────────────────────────────────────────────────
+
+export function startBidWatcher(cfg: BidWatcherConfig): { ok: boolean; message: string } {
+  if (state.watcher.active) return { ok: false, message: 'bid watcher already active' }
   if (!state.privateKey || !state.appConfig)
     return { ok: false, message: 'bidder not initialized — GENOME_BID_PASSWORD missing?' }
 
-  state.autoBid.running = true
-  state.autoBid.config = cfg
-  state.autoBid.lastAction = 'started'
-  state.autoBid.lastCheckedAt = undefined
-  state.autoBid.lastObservedAuction = undefined
-  state.autoBid.nextBidEth = undefined
-  state.autoBid.lastTxHash = undefined
-  state.autoBid.lastError = undefined
-  state.autoBid.sessionBidCount = 0
-  state.autoBid.sessionEthSpentWei = 0n
-  state.autoBid.stoppedAt = undefined
-
-  let inFlight = false
-  const tick = async () => {
-    if (inFlight || !state.autoBid.running || !state.appConfig) return
-    inFlight = true
-    const bidCfg = state.autoBid.config!
-
-    try {
-      const checkedAt = new Date().toISOString()
-      const status = await getAuctionStatus(state.appConfig, state.appConfig.walletAddress)
-      state.autoBid.lastCheckedAt = checkedAt
-      state.autoBid.lastObservedAuction = status
-      state.autoBid.lastError = undefined
-
-      if (status.blocksRemaining <= 0) {
-        state.autoBid.nextBidEth = undefined
-        state.autoBid.lastAction = 'auction settled, waiting for next round'
-        return
-      }
-
-      if (status.isUserWinning) {
-        state.autoBid.nextBidEth = undefined
-        state.autoBid.lastAction = `winning at ${status.topBid} ETH (${status.blocksRemaining} blocks left)`
-        return
-      }
-
-      state.autoBid.nextBidEth = status.minBidToOutbid
-
-      if (status.blocksRemaining > bidCfg.leadBlocks) {
-        state.autoBid.lastAction =
-          `waiting for lead window: ${status.blocksRemaining} blocks remaining, ` +
-          `trigger at <= ${bidCfg.leadBlocks}`
-        return
-      }
-
-      const newBidWei = parseEther(status.minBidToOutbid)
-      if (newBidWei > parseEther(bidCfg.maxEth)) {
-        const msg = `minimum outbid ${status.minBidToOutbid} ETH exceeds max ${bidCfg.maxEth} ETH`
-        state.autoBid.lastAction = msg
-        pushEvent({ type: 'max_eth_exceeded', strategy: 'auto-bid', timestamp: new Date().toISOString(), message: `[auto-bid] ${msg}`, tokenId: status.latestTokenId })
-        return
-      }
-
-      const newBid = status.minBidToOutbid
-      const txHash = await tryBid(status, newBid, { gasStrategy: bidCfg.gasStrategy, dryRun: bidCfg.dryRun })
-      if (!bidCfg.dryRun) {
-        state.autoBid.lastTxHash = txHash
-        state.autoBid.sessionBidCount++
-        state.autoBid.sessionEthSpentWei += parseEther(newBid)
-        pushEvent({
-          type: 'bid_placed',
-          strategy: 'auto-bid',
-          timestamp: new Date().toISOString(),
-          message: `[auto-bid] Bid placed: ${newBid} ETH for token #${status.latestTokenId} — tx: ${txHash}`,
-          tokenId: status.latestTokenId,
-          txHash,
-          bidEth: newBid,
-        })
-      }
-      state.autoBid.lastAction = `bid ${newBid} ETH tx:${txHash}`
-    } catch (err) {
-      const msg = sanitizeRpcError(err, state.appConfig!.rpcHttpUrl)
-      state.autoBid.lastError = msg
-      state.autoBid.lastAction = `error: ${msg}`
-      pushEvent({ type: 'error', strategy: 'auto-bid', timestamp: new Date().toISOString(), message: `[auto-bid] Error: ${msg}` })
-    } finally {
-      inFlight = false
-    }
-  }
-
-  state.autoBid.intervalId = setInterval(tick, 6_000)
-  tick()
-
-  return { ok: true, message: 'started' }
-}
-
-export function stopAutoBid(): { wasRunning: boolean; lastAction: string; session: { bidCount: number; ethSpent: string } } {
-  const wasRunning = state.autoBid.running
-  const lastAction = state.autoBid.lastAction
-  const session = {
-    bidCount: state.autoBid.sessionBidCount,
-    ethSpent: formatEther(state.autoBid.sessionEthSpentWei) + ' ETH',
-  }
-
-  state.autoBid.running = false
-  state.autoBid.config = null
-  state.autoBid.nextBidEth = undefined
-  state.autoBid.stoppedAt = new Date().toISOString()
-  if (state.autoBid.intervalId) {
-    clearInterval(state.autoBid.intervalId)
-    state.autoBid.intervalId = null
-  }
-
-  return { wasRunning, lastAction, session }
-}
-
-export function getAutoBidState() {
-  return {
-    running: state.autoBid.running,
-    lastAction: state.autoBid.lastAction,
-    config: state.autoBid.config,
-    lastCheckedAt: state.autoBid.lastCheckedAt,
-    lastObservedAuction: state.autoBid.lastObservedAuction,
-    nextBidEth: state.autoBid.nextBidEth,
-    lastTxHash: state.autoBid.lastTxHash,
-    lastError: state.autoBid.lastError,
-    stoppedAt: state.autoBid.stoppedAt,
-    session: {
-      bidCount: state.autoBid.sessionBidCount,
-      ethSpent: formatEther(state.autoBid.sessionEthSpentWei) + ' ETH',
-    },
-  }
-}
-
-// ── Snipe ─────────────────────────────────────────────────────────────────────
-
-export function startSnipe(cfg: SnipeConfig): { ok: boolean; message: string } {
-  if (state.snipe.watching) return { ok: false, message: 'snipe already watching' }
-  if (state.autoBid.running) return { ok: false, message: 'auto-bid is already running — stop it first with stop_auto_bid' }
-  if (!state.privateKey || !state.appConfig)
-    return { ok: false, message: 'bidder not initialized' }
-
   const config = state.appConfig
-  state.snipe.watching = true
-  state.snipe.config = cfg
-  state.snipe.transport = config.rpcWsUrl ? 'websocket' : 'http-polling'
-  state.snipe.status = 'watching'
-  state.snipe.txHash = undefined
-  state.snipe.triggeredAtBlock = undefined
-  state.snipe.triggeredAt = undefined
-  state.snipe.lastCheckedAt = undefined
-  state.snipe.lastObservedAuction = undefined
-  state.snipe.nextBidEth = undefined
-  state.snipe.lastDecision = 'watching for trigger window'
-  state.snipe.stopReason = undefined
-  state.snipe.lastError = undefined
+  state.watcher.active = true
+  state.watcher.config = cfg
+  state.watcher.transport = config.rpcWsUrl ? 'websocket' : 'http-polling'
+  state.watcher.status = 'watching'
+  state.watcher.txHash = undefined
+  state.watcher.firstBidTxHash = undefined
+  state.watcher.triggeredAtBlock = undefined
+  state.watcher.triggeredAt = undefined
+  state.watcher.lastCheckedAt = undefined
+  state.watcher.lastObservedAuction = undefined
+  state.watcher.nextBidEth = undefined
+  state.watcher.lastDecision = 'watching for trigger window'
+  state.watcher.stopReason = undefined
+  state.watcher.lastError = undefined
+  state.watcher.stoppedAt = undefined
 
   let inFlight = false
 
   const onBlock = async () => {
-    if (!state.snipe.watching || !state.appConfig) return
-    const snipeCfg = state.snipe.config!
+    if (!state.watcher.active || !state.appConfig) return
+    const watchCfg = state.watcher.config!
 
-    if (state.snipe.status === 'fired' || inFlight) return
+    if (state.watcher.status === 'fired' || inFlight) return
     inFlight = true
 
     try {
       const checkedAt = new Date().toISOString()
       const status = await getAuctionStatus(state.appConfig, state.appConfig.walletAddress)
-      state.snipe.lastCheckedAt = checkedAt
-      state.snipe.lastObservedAuction = status
+      state.watcher.lastCheckedAt = checkedAt
+      state.watcher.lastObservedAuction = status
+      state.watcher.lastError = undefined
 
       if (status.blocksRemaining <= 0) {
-        state.snipe.status = 'watching'
-        state.snipe.txHash = undefined
-        state.snipe.triggeredAtBlock = undefined
-        state.snipe.triggeredAt = undefined
-        state.snipe.nextBidEth = undefined
-        state.snipe.lastDecision = 'auction settled, waiting for next round'
+        _resetForNewRound()
         return
       }
 
-      const newBidWei = parseEther(status.minBidToOutbid)
-      const newBid = status.minBidToOutbid
-      state.snipe.nextBidEth = newBid
+      state.watcher.nextBidEth = status.minBidToOutbid
 
       if (status.isUserWinning) {
-        state.snipe.status = 'won'
-        state.snipe.lastDecision = `already winning at ${status.topBid} ETH`
-        state.snipe.stopReason = 'wallet is already winning'
-        _stopSnipeWatcher()
+        state.watcher.status = 'won'
+        state.watcher.lastDecision = `already winning at ${status.topBid} ETH`
+        state.watcher.stopReason = 'wallet is already winning'
+        _stopWatcher()
         return
       }
 
-      if (status.blocksRemaining > snipeCfg.triggerBlocks) {
-        state.snipe.lastDecision =
+      if (status.blocksRemaining > watchCfg.triggerBlocks) {
+        state.watcher.lastDecision =
           `waiting for trigger window: ${status.blocksRemaining} blocks remaining, ` +
-          `trigger at <= ${snipeCfg.triggerBlocks}`
+          `trigger at <= ${watchCfg.triggerBlocks}`
         return
       }
 
-      if (newBidWei > parseEther(snipeCfg.maxEth)) {
-        const msg = `next bid ${newBid} ETH exceeds max ${snipeCfg.maxEth} ETH`
-        state.snipe.status = 'failed'
-        state.snipe.lastDecision = msg
-        state.snipe.stopReason = 'required bid exceeded maxEth'
-        pushEvent({ type: 'max_eth_exceeded', strategy: 'snipe', timestamp: new Date().toISOString(), message: `[snipe] ${msg}`, tokenId: status.latestTokenId })
-        _stopSnipeWatcher()
+      const noCompetition = status.winner.toLowerCase() === ZERO_ADDRESS
+
+      if (noCompetition && state.watcher.status !== 'first_bid_placed') {
+        await _handleFirstMover(status, watchCfg)
         return
       }
 
-      state.snipe.status = 'fired'
-      state.snipe.triggeredAtBlock = status.currentBlock
-      state.snipe.triggeredAt = checkedAt
-      state.snipe.lastDecision = `submitting bid ${newBid} ETH`
-      const txHash = await tryBid(status, newBid, {
-        usePrivateMempool: snipeCfg.usePrivateMempool,
-        gasPriorityMultiplier: snipeCfg.gasPriorityMultiplier,
-        minPriorityFeeGwei: snipeCfg.minPriorityFeeGwei,
-        dryRun: snipeCfg.dryRun,
-      })
-      state.snipe.txHash = txHash
-      state.snipe.lastDecision = `submitted bid ${newBid} ETH tx:${txHash}`
-      state.snipe.stopReason = 'bid submitted'
-      if (!snipeCfg.dryRun) {
-        pushEvent({
-          type: 'bid_placed',
-          strategy: 'snipe',
-          timestamp: new Date().toISOString(),
-          message: `[snipe] Bid placed: ${newBid} ETH for token #${status.latestTokenId} — tx: ${txHash}`,
-          tokenId: status.latestTokenId,
-          txHash,
-          bidEth: newBid,
-        })
+      if (noCompetition) {
+        state.watcher.lastDecision = 'first bid submitted, waiting for confirmation'
+        return
       }
-      _stopSnipeWatcher()
+
+      await _handleSnipe(status, watchCfg, checkedAt)
+
     } catch (err) {
       const msg = sanitizeRpcError(err, config.rpcHttpUrl)
-      state.snipe.status = 'failed'
-      state.snipe.lastError = msg
-      state.snipe.lastDecision = `error: ${msg}`
-      state.snipe.stopReason = 'runtime error'
-      pushEvent({ type: 'error', strategy: 'snipe', timestamp: new Date().toISOString(), message: `[snipe] Error: ${msg}` })
-      _stopSnipeWatcher()
+      state.watcher.status = 'failed'
+      state.watcher.lastError = msg
+      state.watcher.lastDecision = `error: ${msg}`
+      state.watcher.stopReason = 'runtime error'
+      pushEvent({ type: 'error', strategy: 'bid-watcher', timestamp: new Date().toISOString(), message: `[bid] Error: ${msg}` })
+      _stopWatcher()
     } finally {
       inFlight = false
     }
@@ -457,83 +351,84 @@ export function startSnipe(cfg: SnipeConfig): { ok: boolean; message: string } {
 
   if (config.rpcWsUrl) {
     const wsClient = makePublicClient(config)
-    state.snipe.unwatch = wsClient.watchBlocks({
+    state.watcher.unwatch = wsClient.watchBlocks({
       onBlock: () => { void onBlock() },
       onError: (err) => {
         const errMsg = sanitizeRpcError(err, config.rpcHttpUrl)
         const warnMsg = `WebSocket error, falling back to HTTP polling: ${errMsg}`
-        process.stderr.write(`[genome-bid-mcp] [snipe] ${warnMsg}\n`)
-        state.snipe.lastError = errMsg
-        state.snipe.transport = 'http-polling'
-        state.snipe.lastDecision = 'WebSocket dropped, continuing via HTTP polling'
-
-        // Detach WS without stopping the overall snipe session (capture ref first to avoid re-entrancy)
-        const wsUnwatch = state.snipe.unwatch
-        state.snipe.unwatch = null
-        wsUnwatch?.()
-
-        pushEvent({ type: 'error', strategy: 'snipe', timestamp: new Date().toISOString(), message: `[snipe] ${warnMsg}` })
-
-        // Continue watching via HTTP polling
+        process.stderr.write(`[genome-bid-mcp] [bid] ${warnMsg}\n`)
+        state.watcher.lastError = errMsg
+        state.watcher.transport = 'http-polling'
+        state.watcher.lastDecision = 'WebSocket dropped, continuing via HTTP polling'
+        const wsUnwatch = state.watcher.unwatch
+        state.watcher.unwatch = null
+        // Assign new unwatch before calling the old one to close the re-entrancy gap
         const id = setInterval(() => { void onBlock() }, 3_000)
-        state.snipe.unwatch = () => clearInterval(id)
+        state.watcher.unwatch = () => clearInterval(id)
+        wsUnwatch?.()
+        pushEvent({ type: 'error', strategy: 'bid-watcher', timestamp: new Date().toISOString(), message: `[bid] ${warnMsg}` })
         void onBlock()
       },
     })
   } else {
-    process.stderr.write('[genome-bid-mcp] No rpcWsUrl — snipe falling back to HTTP polling (less precise)\n')
-    state.snipe.lastDecision = 'watching via HTTP polling because rpcWsUrl is not configured'
+    process.stderr.write('[genome-bid-mcp] No rpcWsUrl — bid watcher using HTTP polling (3s)\n')
+    state.watcher.lastDecision = 'watching via HTTP polling (rpcWsUrl not configured)'
     const id = setInterval(() => { void onBlock() }, 3_000)
-    state.snipe.unwatch = () => clearInterval(id)
+    state.watcher.unwatch = () => clearInterval(id)
     void onBlock()
   }
 
   return { ok: true, message: config.rpcWsUrl ? 'watching (WebSocket)' : 'watching (HTTP polling)' }
 }
 
-function _stopSnipeWatcher(): void {
-  state.snipe.watching = false
-  if (state.snipe.unwatch) {
-    state.snipe.unwatch()
-    state.snipe.unwatch = null
+function _stopWatcher(): void {
+  state.watcher.active = false
+  state.watcher.stoppedAt = new Date().toISOString()
+  if (state.watcher.unwatch) {
+    state.watcher.unwatch()
+    state.watcher.unwatch = null
   }
 }
 
-export function stopSnipe(): void {
-  _stopSnipeWatcher()
-  state.snipe.config = null
-  state.snipe.transport = null
-  state.snipe.status = 'idle'
-  state.snipe.txHash = undefined
-  state.snipe.triggeredAtBlock = undefined
-  state.snipe.triggeredAt = undefined
-  state.snipe.lastCheckedAt = undefined
-  state.snipe.lastObservedAuction = undefined
-  state.snipe.nextBidEth = undefined
-  state.snipe.lastError = undefined
-  state.snipe.lastDecision = 'stopped manually'
-  state.snipe.stopReason = 'stopped manually'
+export function stopBidWatcher(): void {
+  _stopWatcher()
+  state.watcher.config = null
+  state.watcher.transport = null
+  state.watcher.status = 'idle'
+  state.watcher.txHash = undefined
+  state.watcher.firstBidTxHash = undefined
+  state.watcher.triggeredAtBlock = undefined
+  state.watcher.triggeredAt = undefined
+  state.watcher.lastCheckedAt = undefined
+  state.watcher.lastObservedAuction = undefined
+  state.watcher.nextBidEth = undefined
+  state.watcher.lastError = undefined
+  state.watcher.stoppedAt = undefined
+  state.watcher.lastDecision = 'stopped manually'
+  state.watcher.stopReason = 'stopped manually'
 }
 
-export function getSnipeState() {
-  const lastObservedAuction = state.snipe.lastObservedAuction
-  const config = state.snipe.config
+export function getBidWatcherState(): BidWatcherSnapshot {
+  const lastObservedAuction = state.watcher.lastObservedAuction
+  const config = state.watcher.config
 
   return {
     initialized: isInitialized(),
     walletAddress: state.appConfig?.walletAddress,
-    watching: state.snipe.watching,
-    transport: state.snipe.transport,
-    status: state.snipe.status,
+    active: state.watcher.active,
+    transport: state.watcher.transport,
+    status: state.watcher.status,
     config,
-    txHash: state.snipe.txHash,
-    triggeredAtBlock: state.snipe.triggeredAtBlock,
-    triggeredAt: state.snipe.triggeredAt,
-    lastCheckedAt: state.snipe.lastCheckedAt,
-    lastDecision: state.snipe.lastDecision,
-    stopReason: state.snipe.stopReason,
-    lastError: state.snipe.lastError,
-    nextBidEth: state.snipe.nextBidEth,
+    txHash: state.watcher.txHash,
+    firstBidTxHash: state.watcher.firstBidTxHash,
+    triggeredAtBlock: state.watcher.triggeredAtBlock,
+    triggeredAt: state.watcher.triggeredAt,
+    lastCheckedAt: state.watcher.lastCheckedAt,
+    lastDecision: state.watcher.lastDecision,
+    stopReason: state.watcher.stopReason,
+    lastError: state.watcher.lastError,
+    stoppedAt: state.watcher.stoppedAt,
+    nextBidEth: state.watcher.nextBidEth,
     lastObservedAuction,
     blocksUntilTrigger:
       config && lastObservedAuction

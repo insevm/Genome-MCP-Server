@@ -1,7 +1,7 @@
 {
   "name": "genome-bid",
-  "version": "0.1.0",
-  "description": "Genome NFT auto-bid MCP server — place bids, snipe auctions, and manage your Kernel smart account on Ethereum mainnet.",
+  "version": "0.2.0",
+  "description": "Genome NFT auto-bid MCP server — place bids, watch auctions, swap GENE tokens, and manage your bidding wallet on Ethereum mainnet.",
   "mcp_server": {
     "transport": "stdio",
     "command": "npx",
@@ -13,12 +13,10 @@
   "tools": [
     "get_bid_status",
     "place_bid",
-    "start_auto_bid",
-    "stop_auto_bid",
-    "get_auto_bid_status",
-    "snipe_bid",
-    "get_snipe_status",
-    "stop_snipe",
+    "start_bid",
+    "stop_bid",
+    "get_bid_watcher_status",
+    "get_bid_events",
     "get_bid_history",
     "get_wallet_info",
     "get_floor_price",

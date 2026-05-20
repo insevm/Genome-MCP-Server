@@ -126,12 +126,9 @@ Beyond answering questions, this skill ships an **MCP server** that lets your ag
 |------|-------------|
 | `get_bid_status` | Live auction snapshot: top bid, blocks remaining, current winner |
 | `place_bid` | Submit a single bid at an exact ETH amount |
-| `start_auto_bid` | Continuously outbid opponents up to a max ETH cap |
-| `stop_auto_bid` | Stop the auto-bid monitor |
-| `get_auto_bid_status` | Inspect auto-bid state and session stats |
-| `snipe_bid` | Fire one bid in the final N blocks with aggressive gas |
-| `stop_snipe` | Cancel the snipe watcher |
-| `get_snipe_status` | Inspect snipe state, trigger progress, last decision |
+| `start_bid` | Unified watcher: enters at minimum price if no competition, snipes with aggressive gas if a competitor appears |
+| `stop_bid` | Stop the active bid watcher |
+| `get_bid_watcher_status` | Inspect watcher state, transport mode, trigger progress, last decision |
 | `get_bid_events` | Drain all unread bid events (placed, exceeded limit, errors) |
 | `get_bid_history` | Recent bid submissions recorded locally |
 | `get_wallet_info` | ETH balance, GENE balance, default settings |
@@ -146,9 +143,8 @@ Beyond answering questions, this skill ships an **MCP server** that lets your ag
 
 ```
 What is the current Genome auction status?
-Watch the auction and automatically outbid anyone, cap at 0.3 ETH
-Snipe the Genome auction in the final seconds, up to 0.35 ETH
-Analyze the last 10 auction rounds
+Watch the auction and bid up to 0.3 ETH — enter at min price if no one is bidding, snipe if there's competition
+Analyze the last 10 auction rounds and show snipe-window gas stats
 Profile this bidder: 0xABC...
 Buy GENE with 0.1 ETH on Uniswap
 Estimate the current Genome floor price

@@ -54,16 +54,14 @@ When registering this skill in your agent config, set:
 |------|-------------|
 | `get_bid_status` | Get current auction state, including top bid, the current contract `minBidToOutbid`, blocks remaining, and whether your wallet is winning |
 | `place_bid` | Submit a single explicit ETH bid with no monitoring or rebidding. Returns the observed auction snapshot and the minimum executable bid required for this one-shot transaction |
-| `start_auto_bid` | Start a background monitor that, near the deadline, re-bids at the contract-required `minBidToOutbid` whenever you are outbid, up to a configured ETH cap |
-| `stop_auto_bid` | Stop the background monitor |
-| `get_auto_bid_status` | Inspect whether auto-bid is running, its active config, last action, latest observed auction snapshot, and any recent error |
-| `snipe_bid` | Fire a single bid at the contract-required `minBidToOutbid` in the final blocks before the auction deadline, with aggressive gas and Flashbots private mempool |
-| `get_snipe_status` | Inspect the current snipe watcher state, including config, trigger progress, and any stop or error reason |
-| `stop_snipe` | Stop the current snipe watcher and clear its active runtime state |
+| `start_bid` | Start the unified bid watcher. Enters at the contract minimum with normal gas if no one has bid (first-mover); fires a snipe bid with aggressive gas if a competitor appears. Uses WebSocket block subscription when available, falls back to HTTP polling. |
+| `stop_bid` | Stop the active bid watcher |
+| `get_bid_watcher_status` | Inspect watcher state, transport mode (WebSocket or HTTP polling), active config, trigger-window progress, latest auction snapshot, and any stop or error reason |
+| `get_bid_events` | Drain all unread bid events since the last call: bid_placed, max_eth_exceeded, error |
 | `get_bid_history` | List recent local bid submissions tagged with the current wallet address; does not backfill full on-chain history or final outcomes |
 | `get_wallet_info` | Show wallet ETH balance, GENE balance, and default bid settings |
 | `get_floor_price` | Estimate the current spot break-even bid for the next auction based on the embedded GENE and a live Uniswap quote; excludes gas and future price movement |
-| `analyze_auction_history` | Analyze recent completed auction rounds to see bid timing, winning prices, and the most active bidders |
+| `analyze_auction_history` | Analyze recent completed auction rounds to see bid timing, winning prices, snipe-window gas stats, and the most active bidders |
 | `analyze_bidder` | Profile a specific address's bidding style, win rate, bid timing, and increment behavior |
 | `withdraw_eth` | Withdraw native ETH from the wallet to any address |
 | `withdraw_gene` | Transfer GENE tokens from the wallet to any address |
@@ -77,15 +75,13 @@ What is the current Genome auction status?
 Place a single 0.3 ETH bid on Genome
 Submit one bid on Genome for exactly 0.28 ETH through Flashbots
 
-Watch the Genome auction and automatically outbid anyone who beats me, cap at 0.3 ETH
-Show my current Genome auto-bid status
-
-Snipe the Genome auction in the final seconds, up to 0.35 ETH
-Stop my current Genome snipe watcher
+Watch the Genome auction and bid up to 0.3 ETH — enter at min price if no one is bidding, snipe if there's competition
+Show my Genome bid watcher status
+Stop my Genome bid watcher
 
 Estimate the current Genome floor price before I bid
 
-Analyze the last 10 Genome auction rounds
+Analyze the last 10 Genome auction rounds and show snipe-window gas stats
 
 Analyze how 0xABC... has been bidding in recent Genome auctions
 
