@@ -59,6 +59,7 @@ export interface SnipeConfig {
   maxEth: string
   triggerBlocks: number
   gasPriorityMultiplier: number
+  minPriorityFeeGwei?: number
   usePrivateMempool: boolean
   dryRun: boolean
 }

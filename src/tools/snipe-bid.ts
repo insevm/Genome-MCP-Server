@@ -7,6 +7,7 @@ interface SnipeBidArgs {
   maxEth: string
   triggerBlocks?: number
   gasPriorityMultiplier?: number
+  minPriorityFeeGwei?: number
   usePrivateMempool?: boolean
   dryRun?: boolean
 }
@@ -36,6 +37,13 @@ export async function handleSnipeBid(args: SnipeBidArgs): Promise<object> {
     throw new Error('gasPriorityMultiplier must be a number between 1 and 20')
   }
 
+  if (
+    args.minPriorityFeeGwei !== undefined &&
+    (!Number.isFinite(args.minPriorityFeeGwei) || args.minPriorityFeeGwei <= 0)
+  ) {
+    throw new Error('minPriorityFeeGwei must be a positive number')
+  }
+
   const config = await loadConfig()
   const snipeDefs = config.defaults.snipe
 
@@ -43,6 +51,7 @@ export async function handleSnipeBid(args: SnipeBidArgs): Promise<object> {
     maxEth: args.maxEth,
     triggerBlocks: args.triggerBlocks ?? snipeDefs.triggerBlocks,
     gasPriorityMultiplier: args.gasPriorityMultiplier ?? snipeDefs.gasPriorityMultiplier,
+    minPriorityFeeGwei: args.minPriorityFeeGwei,
     usePrivateMempool: args.usePrivateMempool ?? snipeDefs.usePrivateMempool,
     dryRun: args.dryRun ?? false,
   }

@@ -5,6 +5,7 @@ import {
   webSocket,
   encodeFunctionData,
   parseEther,
+  parseGwei,
   formatEther,
   type Hex,
   type Address,
@@ -40,6 +41,7 @@ export async function sendBid(
   opts: {
     usePrivateMempool?: boolean
     gasPriorityMultiplier?: number
+    minPriorityFeeGwei?: number
     dryRun?: boolean
   } = {},
 ): Promise<string> {
@@ -55,10 +57,15 @@ export async function sendBid(
   }
   let maxPriorityFeePerGas: bigint | undefined
 
-  if (multiplier > 1) {
+  if (multiplier > 1 || opts.minPriorityFeeGwei !== undefined) {
     const fees = await publicClient.estimateFeesPerGas()
     const multiplierBps = BigInt(Math.round(multiplier * 100))
     maxPriorityFeePerGas = (fees.maxPriorityFeePerGas * multiplierBps) / 100n
+
+    if (opts.minPriorityFeeGwei !== undefined) {
+      const minWei = parseGwei(opts.minPriorityFeeGwei.toString())
+      if (maxPriorityFeePerGas < minWei) maxPriorityFeePerGas = minWei
+    }
   }
 
   const hash = await walletClient.sendTransaction({

@@ -173,6 +173,7 @@ async function tryBid(
     gasStrategy?: 'normal' | 'fast'
     usePrivateMempool?: boolean
     gasPriorityMultiplier?: number
+    minPriorityFeeGwei?: number
     dryRun?: boolean
   },
 ): Promise<string> {
@@ -183,6 +184,7 @@ async function tryBid(
     dryRun: opts.dryRun,
     usePrivateMempool: opts.usePrivateMempool,
     gasPriorityMultiplier: opts.gasPriorityMultiplier ?? (opts.gasStrategy === 'fast' ? 2 : 1),
+    minPriorityFeeGwei: opts.minPriorityFeeGwei,
   })
 
   if (opts.dryRun) return txHash
@@ -224,7 +226,6 @@ export function startAutoBid(cfg: AutoBidConfig): { ok: boolean; message: string
   state.autoBid.sessionBidCount = 0
   state.autoBid.sessionEthSpentWei = 0n
   state.autoBid.stoppedAt = undefined
-  _eventQueue.length = 0
 
   let inFlight = false
   const tick = async () => {
@@ -361,7 +362,6 @@ export function startSnipe(cfg: SnipeConfig): { ok: boolean; message: string } {
   state.snipe.lastDecision = 'watching for trigger window'
   state.snipe.stopReason = undefined
   state.snipe.lastError = undefined
-  _eventQueue.length = 0
 
   let inFlight = false
 
@@ -424,6 +424,7 @@ export function startSnipe(cfg: SnipeConfig): { ok: boolean; message: string } {
       const txHash = await tryBid(status, newBid, {
         usePrivateMempool: snipeCfg.usePrivateMempool,
         gasPriorityMultiplier: snipeCfg.gasPriorityMultiplier,
+        minPriorityFeeGwei: snipeCfg.minPriorityFeeGwei,
         dryRun: snipeCfg.dryRun,
       })
       state.snipe.txHash = txHash

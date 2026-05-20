@@ -98,7 +98,8 @@ const TOOLS: Tool[] = [
       properties: {
         maxEth: { type: 'string', description: 'Maximum bid in ETH' },
         triggerBlocks: { type: 'number', description: 'Fire when this many blocks remain before deadline. Default 1.' },
-        gasPriorityMultiplier: { type: 'number', description: 'Multiply maxPriorityFeePerGas by this factor. Default 5.0' },
+        gasPriorityMultiplier: { type: 'number', description: 'Multiply maxPriorityFeePerGas by this factor. Default 5.0. Range 1-20.' },
+        minPriorityFeeGwei: { type: 'number', description: 'Absolute floor for maxPriorityFeePerGas in gwei. Overrides multiplier when higher. Use analyze_auction_history to see recent snipe-window gas and set this above the competition.' },
         usePrivateMempool: { type: 'boolean', description: 'Submit via Flashbots Protect. Default false.' },
         dryRun: { type: 'boolean', description: 'Simulate without sending transactions' },
       },

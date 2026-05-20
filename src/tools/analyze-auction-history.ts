@@ -1,4 +1,4 @@
-import { createPublicClient, http, formatEther, parseAbiItem } from 'viem'
+import { createPublicClient, http, formatEther, formatGwei, parseAbiItem } from 'viem'
 import { mainnet } from 'viem/chains'
 import { loadConfig } from '../store.js'
 import { GENOME_CONTRACT, BLOCK_PER_MINT } from '../config.js'
@@ -11,6 +11,14 @@ interface AnalyzeAuctionHistoryArgs {
   rounds?: number
 }
 
+interface BidEntry {
+  bidder: string
+  amount: string
+  block: number
+  blocksBeforeEnd: number
+  maxPriorityFeeGwei?: string
+}
+
 interface RoundSummary {
   tokenId: number
   winner: string
@@ -19,7 +27,7 @@ interface RoundSummary {
   endBlock: number
   totalBids: number
   uniqueBidders: number
-  bids: { bidder: string; amount: string; block: number; blocksBeforeEnd: number }[]
+  bids: BidEntry[]
 }
 
 export async function handleAnalyzeAuctionHistory(args: AnalyzeAuctionHistoryArgs): Promise<object> {
@@ -58,18 +66,23 @@ export async function handleAnalyzeAuctionHistory(args: AnalyzeAuctionHistoryArg
   // Take only the most recent N rounds
   const targetRounds = sortedSettled.slice(-rounds)
 
-  const roundsData: RoundSummary[] = targetRounds.map((settled, idx, arr) => {
+  // Build rounds with txHash retained for gas lookup
+  const SNIPE_WINDOW_BLOCKS = 2
+  type BidWithTx = BidEntry & { txHash: `0x${string}` }
+
+  const roundsRaw = targetRounds.map((settled, idx, arr) => {
     const endBlock   = Number(settled.blockNumber)
     const prevBlock  = idx > 0 ? Number(arr[idx - 1].blockNumber) : endBlock - Number(BLOCK_PER_MINT)
     const startBlock = prevBlock + 1
 
-    const roundBids = bidLogs
+    const roundBids: BidWithTx[] = bidLogs
       .filter(l => Number(l.blockNumber) >= startBlock && Number(l.blockNumber) <= endBlock)
       .map(l => ({
-        bidder:         l.args.bidder as string,
-        amount:         formatEther(l.args.amount as bigint),
-        block:          Number(l.blockNumber),
+        bidder:          l.args.bidder as string,
+        amount:          formatEther(l.args.amount as bigint),
+        block:           Number(l.blockNumber),
         blocksBeforeEnd: endBlock - Number(l.blockNumber),
+        txHash:          l.transactionHash as `0x${string}`,
       }))
       .sort((a, b) => a.block - b.block)
 
@@ -84,6 +97,35 @@ export async function handleAnalyzeAuctionHistory(args: AnalyzeAuctionHistoryArg
       bids:          roundBids,
     }
   })
+
+  // Fetch maxPriorityFeePerGas for snipe-window bids (last N blocks of each round)
+  const snipeWindowTxHashes = new Set<`0x${string}`>()
+  for (const round of roundsRaw) {
+    for (const bid of round.bids) {
+      if (bid.blocksBeforeEnd <= SNIPE_WINDOW_BLOCKS) snipeWindowTxHashes.add(bid.txHash)
+    }
+  }
+
+  const gasByHash = new Map<string, string>()
+  await Promise.all(
+    [...snipeWindowTxHashes].map(async hash => {
+      try {
+        const tx = await client.getTransaction({ hash })
+        if (tx.maxPriorityFeePerGas != null) {
+          gasByHash.set(hash, formatGwei(tx.maxPriorityFeePerGas))
+        }
+      } catch { /* skip on RPC error */ }
+    }),
+  )
+
+  // Strip txHash from output, attach gas where available
+  const roundsData: RoundSummary[] = roundsRaw.map(r => ({
+    ...r,
+    bids: r.bids.map(({ txHash, ...bid }) => ({
+      ...bid,
+      ...(gasByHash.has(txHash) ? { maxPriorityFeeGwei: gasByHash.get(txHash) } : {}),
+    })),
+  }))
 
   // Cross-round bidder stats
   const bidderStats: Record<string, { bids: number; wins: number; roundsEntered: number; maxBidEth: number }> = {}
@@ -119,6 +161,19 @@ export async function handleAnalyzeAuctionHistory(args: AnalyzeAuctionHistoryArg
   const avgWinningBid = winningBids.reduce((a, b) => a + b, 0) / winningBids.length
   const avgBidsPerRound = roundsData.reduce((a, r) => a + r.totalBids, 0) / roundsData.length
 
+  // Gas summary for snipe-window bids
+  const snipeGasValues = [...gasByHash.values()].map(parseFloat).filter(v => !isNaN(v)).sort((a, b) => a - b)
+  const snipeWindowGas = snipeGasValues.length > 0
+    ? {
+        samplesCollected: snipeGasValues.length,
+        minGwei:  snipeGasValues[0].toFixed(4),
+        p50Gwei:  snipeGasValues[Math.floor(snipeGasValues.length * 0.5)].toFixed(4),
+        p90Gwei:  snipeGasValues[Math.floor(snipeGasValues.length * 0.9)].toFixed(4),
+        maxGwei:  snipeGasValues[snipeGasValues.length - 1].toFixed(4),
+        recommendation: `Set minPriorityFeeGwei above ${snipeGasValues[Math.floor(snipeGasValues.length * 0.9)].toFixed(2)} to beat 90% of recent snipe-window bids`,
+      }
+    : { samplesCollected: 0, note: 'No snipe-window transactions found in this range' }
+
   return {
     roundsAnalyzed: roundsData.length,
     blockRange: { from: Number(fromBlock), to: Number(currentBlock) },
@@ -127,6 +182,7 @@ export async function handleAnalyzeAuctionHistory(args: AnalyzeAuctionHistoryArg
       avgWinningBid:    `${avgWinningBid.toFixed(6)} ETH`,
       minWinningBid:    `${Math.min(...winningBids).toFixed(6)} ETH`,
       maxWinningBid:    `${Math.max(...winningBids).toFixed(6)} ETH`,
+      snipeWindowGas,
       topBidders,
     },
     rounds: [...roundsData].reverse(), // most recent first
