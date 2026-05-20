@@ -6,7 +6,6 @@ export interface Config {
   rpcHttpUrl: string
   defaults: {
     maxEth: string
-    incrementEth: string
     leadBlocks: number
     gasStrategy: 'normal' | 'fast'
     snipe: {
@@ -31,6 +30,7 @@ export interface AuctionStatus {
   latestTokenId: number
   winner: string
   topBid: string
+  minBidToOutbid: string
   lastMintBlock: number
   deadlineBlock: number
   blocksRemaining: number
@@ -39,7 +39,6 @@ export interface AuctionStatus {
 
 export interface AutoBidConfig {
   maxEth: string
-  incrementEth: string
   leadBlocks: number
   gasStrategy: 'normal' | 'fast'
   dryRun: boolean

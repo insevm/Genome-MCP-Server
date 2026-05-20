@@ -144,7 +144,8 @@ What is the current Genome auction status?
 ### Place a one-time bid
 
 ```
-Bid on Genome for me, up to 0.3 ETH max
+Place a single 0.3 ETH bid on Genome
+Submit one bid on Genome for exactly 0.28 ETH through Flashbots
 ```
 
 ### Start continuous monitoring
@@ -153,18 +154,32 @@ Bid on Genome for me, up to 0.3 ETH max
 Watch the Genome auction and automatically outbid anyone who beats me, cap at 0.3 ETH
 ```
 
+> Auto-bid uses the contract's live `minBidToOutbid` rule when deciding the next valid bid, rather than a fixed increment.
+
 ### Snipe at end of auction
 
 ```
 Snipe the Genome auction in the final seconds, up to 0.35 ETH
 ```
 
-> Snipe mode fires in the last block before the deadline (~12 seconds on Ethereum), using 5× priority fee and Flashbots Protect to prevent MEV frontrunning.
+> Snipe mode fires in the last block before the deadline (~12 seconds on Ethereum), bids at the contract's live `minBidToOutbid`, and uses 5× priority fee plus Flashbots Protect to prevent MEV frontrunning.
 
 ### Inspect snipe watcher status
 
 ```
 Show my current Genome snipe status
+```
+
+### Inspect auto-bid monitor status
+
+```
+Show my current Genome auto-bid status
+```
+
+### Stop snipe watcher
+
+```
+Stop my current Genome snipe watcher
 ```
 
 ### Estimate current floor price

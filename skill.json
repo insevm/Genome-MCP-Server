@@ -12,10 +12,13 @@
   },
   "tools": [
     "get_bid_status",
+    "place_bid",
     "start_auto_bid",
     "stop_auto_bid",
+    "get_auto_bid_status",
     "snipe_bid",
     "get_snipe_status",
+    "stop_snipe",
     "get_bid_history",
     "get_wallet_info",
     "get_floor_price",

@@ -20,6 +20,7 @@ export const GENOME_ABI = parseAbi([
   'function bidAndMint() payable',
   'function winner() view returns (address)',
   'function topBid() view returns (uint256)',
+  'function minBidToOutbid() view returns (uint256)',
   'function lastMintBlock() view returns (uint64)',
   'function latestTokenId() view returns (uint256)',
   'function BLOCK_PER_MINT() pure returns (uint256)',

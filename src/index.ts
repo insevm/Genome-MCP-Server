@@ -9,9 +9,12 @@ import {
 import { configExists, loadConfig, loadSessionKey } from './store.js'
 import { initBidder } from './bidder.js'
 import { getBidStatus } from './tools/get-bid-status.js'
+import { handlePlaceBid } from './tools/place-bid.js'
 import { handleStartAutoBid } from './tools/start-auto-bid.js'
 import { handleStopAutoBid } from './tools/stop-auto-bid.js'
+import { handleGetAutoBidStatus } from './tools/get-auto-bid-status.js'
 import { handleSnipeBid, handleGetSnipeStatus } from './tools/snipe-bid.js'
+import { handleStopSnipe } from './tools/stop-snipe.js'
 import { handleGetBidHistory } from './tools/get-bid-history.js'
 import { handleGetWalletInfo } from './tools/get-wallet-info.js'
 import { handleWithdrawEth } from './tools/withdraw-eth.js'
@@ -31,18 +34,32 @@ const TOOLS: Tool[] = [
   {
     name: 'get_bid_status',
     description:
-      'Query the current Genome auction state: top bid, winner, blocks remaining, whether the wallet is currently winning.',
+      'Query the current Genome auction state: top bid, the current minBidToOutbid, winner, blocks remaining, and whether the wallet is currently winning.',
     inputSchema: { type: 'object', properties: {}, required: [] },
+  },
+  {
+    name: 'place_bid',
+    description:
+      'Submit a single Genome bid with an explicit ETH amount. No monitoring or rebidding is performed. Returns the observed auction snapshot and the current minimum executable bid required for this one-shot transaction.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        bidEth: { type: 'string', description: 'Exact bid amount in ETH to submit, e.g. "0.25"' },
+        usePrivateMempool: { type: 'boolean', description: 'Submit via Flashbots Protect instead of the public mempool. Default false.' },
+        gasPriorityMultiplier: { type: 'number', description: 'Multiply maxPriorityFeePerGas by this factor. Default 1. Range 1-20.' },
+        dryRun: { type: 'boolean', description: 'Simulate without sending a transaction' },
+      },
+      required: ['bidEth'],
+    },
   },
   {
     name: 'start_auto_bid',
     description:
-      'Start an automatic bid monitor. Watches the auction and re-bids whenever the wallet is outbid, up to maxEth. Runs in the background until stop_auto_bid is called.',
+      'Start an automatic bid monitor. Watches the auction and, within the leadBlocks window, bids the contract-required minBidToOutbid whenever the wallet is outbid, up to maxEth. Runs in the background until stop_auto_bid is called.',
     inputSchema: {
       type: 'object',
       properties: {
         maxEth: { type: 'string', description: 'Maximum bid in ETH, e.g. "0.3"' },
-        incrementEth: { type: 'string', description: 'Amount to outbid by each time, default "0.0001"' },
         leadBlocks: { type: 'number', description: 'Re-bid when this many blocks remain before deadline, default 2' },
         gasStrategy: { type: 'string', enum: ['normal', 'fast'], description: 'Gas strategy: normal (default) or fast (2× priority fee)' },
         dryRun: { type: 'boolean', description: 'Simulate without sending transactions' },
@@ -56,9 +73,15 @@ const TOOLS: Tool[] = [
     inputSchema: { type: 'object', properties: {}, required: [] },
   },
   {
+    name: 'get_auto_bid_status',
+    description:
+      'Inspect the current auto-bid monitor state: whether it is running, the active config, the last action taken, the latest observed auction snapshot, and any recent error.',
+    inputSchema: { type: 'object', properties: {}, required: [] },
+  },
+  {
     name: 'snipe_bid',
     description:
-      'End-of-auction snipe strategy. Fires a single bid in the final N blocks with aggressive gas and Flashbots private mempool. Can run alongside start_auto_bid.',
+      'End-of-auction snipe strategy. Fires a single bid at the contract-required minBidToOutbid in the final N blocks with aggressive gas and Flashbots private mempool. Can run alongside start_auto_bid.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -75,6 +98,11 @@ const TOOLS: Tool[] = [
     name: 'get_snipe_status',
     description:
       'Inspect the current snipe watcher state: active config, transport mode, latest observed auction snapshot, trigger-window progress, candidate next bid, and any error or stop reason.',
+    inputSchema: { type: 'object', properties: {}, required: [] },
+  },
+  {
+    name: 'stop_snipe',
+    description: 'Stop the current snipe watcher and clear its active runtime state.',
     inputSchema: { type: 'object', properties: {}, required: [] },
   },
   {
@@ -213,17 +241,27 @@ async function main() {
         case 'get_bid_status':
           result = await getBidStatus()
           break
+        case 'place_bid':
+          if (!_privateKey) throw new Error('Wallet key not loaded. GENOME_BID_PASSWORD set?')
+          result = await handlePlaceBid(args as unknown as Parameters<typeof handlePlaceBid>[0], _privateKey)
+          break
         case 'start_auto_bid':
           result = await handleStartAutoBid(args as unknown as Parameters<typeof handleStartAutoBid>[0])
           break
         case 'stop_auto_bid':
           result = handleStopAutoBid()
           break
+        case 'get_auto_bid_status':
+          result = await handleGetAutoBidStatus()
+          break
         case 'snipe_bid':
           result = await handleSnipeBid(args as unknown as Parameters<typeof handleSnipeBid>[0])
           break
         case 'get_snipe_status':
           result = handleGetSnipeStatus()
+          break
+        case 'stop_snipe':
+          result = handleStopSnipe()
           break
         case 'get_bid_history':
           result = await handleGetBidHistory(args as unknown as Parameters<typeof handleGetBidHistory>[0])

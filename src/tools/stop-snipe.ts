@@ -1,0 +1,14 @@
+import { getSnipeState, stopSnipe } from '../bidder.js'
+
+export function handleStopSnipe(): object {
+  const before = getSnipeState()
+  stopSnipe()
+
+  return {
+    status: 'stopped',
+    wasWatching: before.watching,
+    previousStatus: before.status,
+    previousDecision: before.lastDecision,
+    previousStopReason: before.stopReason,
+  }
+}

@@ -89,7 +89,6 @@ export async function runSetup(mode: 'setup' | 'renew'): Promise<void> {
     rpcHttpUrl,
     defaults: {
       maxEth,
-      incrementEth: '0.0001',
       leadBlocks: 2,
       gasStrategy: 'normal',
       snipe: {
