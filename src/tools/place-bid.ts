@@ -92,6 +92,7 @@ export async function handlePlaceBid(
     throw new Error(`Bid submission failed: ${sanitizeRpcError(err, config.rpcHttpUrl)}`)
   }
 
+  let recordSaved: boolean | 'skipped' = 'skipped'
   if (!args.dryRun) {
     const record: BidRecord = {
       walletAddress: config.walletAddress,
@@ -99,9 +100,16 @@ export async function handlePlaceBid(
       txHash,
       bidEth: args.bidEth,
       tokenId: biddingForTokenId,
+      blockNumber: status.currentBlock,
       result: 'pending',
     }
-    await appendBidRecord(record)
+    try {
+      await appendBidRecord(record)
+      recordSaved = true
+    } catch {
+      // Record failure must not obscure a submitted transaction
+      recordSaved = false
+    }
   }
 
   return {
@@ -114,6 +122,7 @@ export async function handlePlaceBid(
     auctionContext,
     usePrivateMempool: args.usePrivateMempool ?? false,
     gasPriorityMultiplier: args.gasPriorityMultiplier ?? 1,
+    recordSaved,
     observedAuction: status,
     note:
       status.blocksRemaining <= 0

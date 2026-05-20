@@ -133,6 +133,28 @@ export async function appendBidRecord(record: BidRecord): Promise<void> {
   await fs.appendFile(HISTORY_FILE, JSON.stringify(record) + '\n', 'utf8')
 }
 
+export async function updateBidResults(updates: Record<string, 'won' | 'outbid'>): Promise<void> {
+  if (Object.keys(updates).length === 0) return
+  let raw = ''
+  try {
+    raw = await fs.readFile(HISTORY_FILE, 'utf8')
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err
+    return
+  }
+  const lines = raw.trim().split('\n').filter(Boolean)
+  const rewritten = lines.map(line => {
+    try {
+      const record = JSON.parse(line) as BidRecord
+      if (record.txHash && updates[record.txHash]) {
+        return JSON.stringify({ ...record, result: updates[record.txHash] })
+      }
+    } catch { /* skip malformed lines */ }
+    return line
+  })
+  await fs.writeFile(HISTORY_FILE, rewritten.join('\n') + '\n', 'utf8')
+}
+
 export async function readBidHistory(limit: number, walletAddress: string): Promise<BidRecord[]> {
   try {
     const raw   = await fs.readFile(HISTORY_FILE, 'utf8')

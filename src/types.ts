@@ -22,6 +22,7 @@ export interface BidRecord {
   txHash: string
   bidEth: string
   tokenId: number
+  blockNumber?: number
   result: 'won' | 'outbid' | 'pending'
 }
 
