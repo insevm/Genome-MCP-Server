@@ -55,7 +55,7 @@ const TOOLS: Tool[] = [
   {
     name: 'start_auto_bid',
     description:
-      'Start an automatic bid monitor. Watches the auction and, within the leadBlocks window, bids the contract-required minBidToOutbid whenever the wallet is outbid, up to maxEth. Runs in the background until stop_auto_bid is called.',
+      'Start an automatic bid monitor. Watches the auction and, within the leadBlocks window, bids the contract-required minBidToOutbid whenever the wallet is outbid, up to maxEth. Runs in the background until stop_auto_bid is called. Use for auctions where you want continuous protection throughout the round.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -81,7 +81,7 @@ const TOOLS: Tool[] = [
   {
     name: 'snipe_bid',
     description:
-      'End-of-auction snipe strategy. Fires a single bid at the contract-required minBidToOutbid in the final N blocks with aggressive gas and Flashbots private mempool. Can run alongside start_auto_bid.',
+      'End-of-auction snipe strategy. Fires a single bid at the contract-required minBidToOutbid in the final N blocks with aggressive gas and Flashbots private mempool. Use when you want to avoid revealing intent early; combine with start_auto_bid for full coverage throughout the round.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -187,7 +187,7 @@ const TOOLS: Tool[] = [
   {
     name: 'swap_gene',
     description:
-      'Buy or sell GENE on Uniswap V3 (ETH/GENE 0.3% pool). Specify direction ("buy" or "sell") and either an ETH amount or a GENE amount — the other side is quoted from the pool.',
+      'Buy or sell GENE on Uniswap V3 (ETH/GENE 0.3% pool). Specify direction ("buy" or "sell") and exactly one of ethAmount or geneAmount — the other side is quoted from the pool.',
     inputSchema: {
       type: 'object',
       properties: {
