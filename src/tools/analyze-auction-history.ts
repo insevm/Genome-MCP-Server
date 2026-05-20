@@ -67,7 +67,8 @@ export async function handleAnalyzeAuctionHistory(args: AnalyzeAuctionHistoryArg
   const targetRounds = sortedSettled.slice(-rounds)
 
   // Build rounds with txHash retained for gas lookup
-  const SNIPE_WINDOW_BLOCKS = 2
+  // 3-block window covers triggerBlocks configs of 1, 2, or 3
+  const SNIPE_WINDOW_BLOCKS = 3
   type BidWithTx = BidEntry & { txHash: `0x${string}` }
 
   const roundsRaw = targetRounds.map((settled, idx, arr) => {
@@ -106,17 +107,21 @@ export async function handleAnalyzeAuctionHistory(args: AnalyzeAuctionHistoryArg
     }
   }
 
+  // Fetch in batches of 5 to avoid saturating RPC rate limits
   const gasByHash = new Map<string, string>()
-  await Promise.all(
-    [...snipeWindowTxHashes].map(async hash => {
-      try {
-        const tx = await client.getTransaction({ hash })
-        if (tx.maxPriorityFeePerGas != null) {
-          gasByHash.set(hash, formatGwei(tx.maxPriorityFeePerGas))
-        }
-      } catch { /* skip on RPC error */ }
-    }),
-  )
+  const txHashes = [...snipeWindowTxHashes]
+  for (let i = 0; i < txHashes.length; i += 5) {
+    await Promise.all(
+      txHashes.slice(i, i + 5).map(async hash => {
+        try {
+          const tx = await client.getTransaction({ hash })
+          if (tx.maxPriorityFeePerGas != null) {
+            gasByHash.set(hash, formatGwei(tx.maxPriorityFeePerGas))
+          }
+        } catch { /* skip on RPC error */ }
+      }),
+    )
+  }
 
   // Strip txHash from output, attach gas where available
   const roundsData: RoundSummary[] = roundsRaw.map(r => ({
@@ -163,14 +168,23 @@ export async function handleAnalyzeAuctionHistory(args: AnalyzeAuctionHistoryArg
 
   // Gas summary for snipe-window bids
   const snipeGasValues = [...gasByHash.values()].map(parseFloat).filter(v => !isNaN(v)).sort((a, b) => a - b)
+
+  function pct(sorted: number[], p: number): number {
+    if (sorted.length === 1) return sorted[0]
+    const pos = (sorted.length - 1) * p
+    const lo = Math.floor(pos)
+    const hi = Math.ceil(pos)
+    return lo === hi ? sorted[lo] : sorted[lo] * (hi - pos) + sorted[hi] * (pos - lo)
+  }
+
   const snipeWindowGas = snipeGasValues.length > 0
     ? {
         samplesCollected: snipeGasValues.length,
         minGwei:  snipeGasValues[0].toFixed(4),
-        p50Gwei:  snipeGasValues[Math.floor(snipeGasValues.length * 0.5)].toFixed(4),
-        p90Gwei:  snipeGasValues[Math.floor(snipeGasValues.length * 0.9)].toFixed(4),
+        p50Gwei:  pct(snipeGasValues, 0.5).toFixed(4),
+        p90Gwei:  pct(snipeGasValues, 0.9).toFixed(4),
         maxGwei:  snipeGasValues[snipeGasValues.length - 1].toFixed(4),
-        recommendation: `Set minPriorityFeeGwei above ${snipeGasValues[Math.floor(snipeGasValues.length * 0.9)].toFixed(2)} to beat 90% of recent snipe-window bids`,
+        recommendation: `Set minPriorityFeeGwei above ${pct(snipeGasValues, 0.9).toFixed(4)} to beat 90% of recent snipe-window bids`,
       }
     : { samplesCollected: 0, note: 'No snipe-window transactions found in this range' }
 
