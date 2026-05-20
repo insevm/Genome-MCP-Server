@@ -11,9 +11,10 @@ import {
   WETH9,
 } from '../config.js'
 
-// Halving schedule (matches on-chain logic): Era 0 → 5000 GENE/NFT, halves every 2100 NFTs.
-// Computed in wei so fractional GENE is preserved (e.g., Era 9 = 9.765625 GENE).
-const GENE_PER_NFT_ERA0_WEI = parseEther('5000')
+// Each mint produces 5000 GENE in Era 0, split 50/50: half to LP, half to the NFT holder.
+// This constant represents only the NFT holder's share (what can be recovered by selling).
+// Halves every 2100 NFTs (EPOCH_LENGTH). Computed in wei for fractional precision.
+const GENE_PER_NFT_ERA0_WEI = parseEther('2500')
 const EPOCH_LENGTH = 2100n
 const MAX_ERA = 10n          // EPOCH_LENGTH * MAX_ERA = 21,000 total NFTs
 const MAX_TOKEN_ID = 21_000  // hard cap
@@ -104,7 +105,7 @@ export async function handleGetFloorPrice(): Promise<object> {
     minted:           Number(latestTokenId),
     remaining:        MAX_TOKEN_ID - Number(latestTokenId),
     geneEmbedded:     formatEther(embeddedWei) + ' GENE',
-    geneEmbeddedNote: `Era ${era}: each NFT minted now contains ${formatEther(embeddedWei)} GENE`,
+    geneEmbeddedNote: `Era ${era}: each mint produces ${formatEther(embeddedWei * 2n)} GENE total — ${formatEther(embeddedWei)} GENE goes to the NFT holder (recoverable), ${formatEther(embeddedWei)} GENE goes to the liquidity pool.`,
     poolAddress:      GENE_WETH_POOL,
     poolFeeTier:      `${poolFee / 10_000}%`,
     genePriceEth:     formatEther(genePriceWei) + ' ETH per GENE',
