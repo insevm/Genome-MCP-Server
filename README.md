@@ -1,109 +1,194 @@
-# Genome Auto-Bid MCP Server
+# Genome Skill
 
-> Repository: [github.com/insevm/Genome-MCP-Server](https://github.com/insevm/Genome-MCP-Server)
+> Genome NFT project distilled into an AI skill — your agent understands the project deeply and can participate in on-chain auctions.
 
-Let any MCP-compatible AI agent automatically bid on [Genome NFT](https://etherscan.io/address/0x852740fad3e6f5cd4b234311172db29004cceea7) auctions, swap GENE tokens, and manage your bidding wallet — all in natural language.
-
-The MCP server holds an encrypted wallet key on your machine. It can only be unlocked with your password and never leaves your device.
+**Ethereum** · **21,000 NFT hard cap** · **21,000,000 GENE hard cap** · **~20 min auction cycle**
 
 ---
 
-## Table of Contents
+## What is Genome?
 
-- [AI Agent Auto-Install](#ai-agent-auto-install)
-- [Manual Install](#manual-install)
-- [Usage Examples](#usage-examples)
-- [Ask About Genome](#ask-about-genome)
-- [Security Model](#security-model)
-- [FAQ](#faq)
+Genome is an NFT project on Ethereum mainnet. It hard-caps at **21,000 NFTs** with an embedded token called **GENE** (hard cap 21,000,000). The key design principle: the NFT and its tokens are a single unified asset — you cannot separate them. When you transfer the NFT, the GENE inside travels with it.
+
+Each NFT displays **9 letters from the Phoenician alphabet** — one of the oldest writing systems and the ancestor of Hebrew, Arabic, and Greek. The letters are randomly assigned at mint and fixed forever, forming each NFT's unique "gene sequence." The artwork is generated entirely on-chain and lights up based on how much GENE is embedded inside — more GENE means more pixels lit, a brighter image.
 
 ---
 
-## AI Agent Auto-Install
+## Economic Model
 
-> Paste the prompt below into your AI agent and it will handle the full setup automatically.
+### Halving — Like Bitcoin
+
+GENE tokens minted per NFT halve every 2,100 NFTs (one era):
+
+| Era | NFTs | GENE per NFT | Cumulative Supply |
+|-----|------|-------------|------------------|
+| 0 | 1 – 2,100 | 5,000 | 10,500,000 |
+| 1 | 2,101 – 4,200 | 2,500 | 15,750,000 |
+| 2 | 4,201 – 6,300 | 1,250 | 18,375,000 |
+| 3 | 6,301 – 8,400 | 625 | 19,687,500 |
+| … | … | halves | … |
+| 9 | 18,901 – 21,000 | ~9.8 | 21,000,000 |
+
+Early NFTs hold significantly more GENE than later ones. Era 0 NFTs are the densest.
+
+### Auction Proceeds
+
+Every auction's winning bid is distributed as follows:
+
+- **0.5%** → protocol fee
+- **99.5%** → community treasury
+
+**Era 0:** Every 69 mints, the treasury automatically pairs ETH + GENE as Uniswap V3 liquidity — bootstrapping the initial GENE market.
+
+**Era 1+:** Every 3 mints, the treasury uses accumulated ETH to buy GENE back from the open market. Buyback tokens accumulate in the treasury for future community governance.
+
+Auction proceeds continuously support GENE's market liquidity and price floor.
+
+### Auction Mechanics
+
+- New NFT goes up for auction every **~20 minutes** (104 Ethereum blocks)
+- Minimum bid: **0.0001 ETH**
+- Fixed deadline — bids do **not** extend the timer
+- When outbid, your ETH is returned immediately
+- One wallet can hold a maximum of **10 NFTs**
+
+---
+
+## On-Chain Addresses
+
+| Contract | Address |
+|----------|---------|
+| Genome (NFT + GENE) | [`0x852740fad3e6f5cd4b234311172db29004cceea7`](https://etherscan.io/address/0x852740fad3e6f5cd4b234311172db29004cceea7) |
+| Chain | Ethereum Mainnet (chainId 1) |
+
+---
+
+## Knowledge Base — What Your Agent Knows
+
+This skill includes a built-in knowledge base (`docs/genome-project.md`). Add it to your agent and ask anything in natural language — no need to read the contract.
+
+### Project Basics
 
 ```
-Please help me install the Genome Auto-Bid MCP Server. Here is what needs to happen — figure out the right commands and paths for my system:
+What is Genome?
+How many NFTs will ever exist?
+What is GENE and how is it different from a normal ERC-20?
+Can a single wallet hold unlimited NFTs?
+```
 
-1. Clone https://github.com/insevm/Genome-MCP-Server.git into your agent's skills directory and run `npm install` inside it.
+### Auction Mechanics
 
-2. Run the interactive setup wizard: `npx genome-bid-mcp setup`
-   The wizard will ask for an Ethereum mainnet HTTP RPC URL, an optional WebSocket RPC URL, a default max bid in ETH, and an encryption password. It will then print a wallet address.
+```
+How does the Genome auction work?
+What happens if someone outbids me?
+Does a new bid extend the auction deadline?
+What is the minimum bid to enter?
+```
 
-3. The wizard prints an MCP server config snippet when it finishes. Register it in my agent's MCP config so the server starts automatically. The snippet looks like:
-   {
-     "mcpServers": {
-       "genome-bid": {
-         "command": "npx",
-         "args": ["genome-bid-mcp"],
-         "env": { "GENOME_BID_PASSWORD": "<my password>" }
-       }
-     }
-   }
+### Economic Model
 
-4. Tell me the wallet address printed by the wizard — I will send ETH to it to fund bidding.
+```
+Explain the halving schedule
+Where does the auction ETH go?
+How does the community treasury work?
+How is the GENE market liquidity established?
+When does the buyback mechanism kick in?
+```
 
-5. Restart the agent after the config is saved.
+### NFT Artwork
 
-If you hit any errors, share the exact message and I will help troubleshoot.
+```
+What do the letters on a Genome NFT represent?
+Why does the NFT image change over time?
+Is the artwork stored on-chain?
+Which letter is the rarest?
+What makes an NFT brighter or dimmer?
+```
+
+### Balances & Transfers
+
+```
+How is my total GENE balance calculated?
+Can I send GENE tokens without transferring the NFT?
+What happens when I send an NFT to a DeFi contract?
+What if a recipient already holds 10 NFTs?
 ```
 
 ---
 
-## Manual Install
+## MCP Extension — Bidding & Trading Tools
 
-### Prerequisites
+Beyond answering questions, this skill ships an **MCP server** that lets your agent take on-chain actions: monitor auctions, place bids, snipe in the final seconds, swap GENE on Uniswap, and manage the bidding wallet.
 
-| Requirement  | Details |
-| ------------ | ------- |
-| Node.js      | 20 or later |
-| Ethereum RPC | HTTP URL from Alchemy, Infura, or any mainnet provider. WebSocket is optional but improves snipe precision. |
+### Available Tools
 
-### Step 1 — Install
+| Tool | What it does |
+|------|-------------|
+| `get_bid_status` | Live auction snapshot: top bid, blocks remaining, current winner |
+| `place_bid` | Submit a single bid at an exact ETH amount |
+| `start_auto_bid` | Continuously outbid opponents up to a max ETH cap |
+| `stop_auto_bid` | Stop the auto-bid monitor |
+| `get_auto_bid_status` | Inspect auto-bid state and session stats |
+| `snipe_bid` | Fire one bid in the final N blocks with aggressive gas |
+| `stop_snipe` | Cancel the snipe watcher |
+| `get_snipe_status` | Inspect snipe state, trigger progress, last decision |
+| `get_bid_events` | Drain all unread bid events (placed, exceeded limit, errors) |
+| `get_bid_history` | Recent bid submissions recorded locally |
+| `get_wallet_info` | ETH balance, GENE balance, default settings |
+| `get_floor_price` | Estimate break-even bid price from embedded GENE value |
+| `analyze_auction_history` | Per-round stats and leaderboard for recent auctions |
+| `analyze_bidder` | Profile a competitor's bidding behavior and timing pattern |
+| `swap_gene` | Buy or sell GENE on Uniswap V3 (ETH ↔ GENE) |
+| `withdraw_eth` | Send ETH from the bidding wallet to any address |
+| `withdraw_gene` | Send GENE tokens from the bidding wallet |
+
+### Sample Agent Prompts
+
+```
+What is the current Genome auction status?
+Watch the auction and automatically outbid anyone, cap at 0.3 ETH
+Snipe the Genome auction in the final seconds, up to 0.35 ETH
+Analyze the last 10 auction rounds
+Profile this bidder: 0xABC...
+Buy GENE with 0.1 ETH on Uniswap
+Estimate the current Genome floor price
+```
+
+### Install the MCP Server
+
+**Prerequisites:** Node.js 20+, Ethereum mainnet RPC (HTTP required, WebSocket recommended for snipe precision)
+
+**Step 1 — Clone and install**
 
 ```bash
-# From npm (once published)
-npm install -g genome-bid-mcp
-
-# Or from source
-git clone https://github.com/insevm/Genome-MCP-Server.git genome-bid-mcp
-cd genome-bid-mcp
-npm install
-npm run build
+git clone https://github.com/insevm/Genome-MCP-Server.git
+cd Genome-MCP-Server
+npm install && npm run build
 ```
 
-### Step 2 — Initialize
+**Step 2 — Initialize wallet**
 
 ```bash
 npx genome-bid-mcp setup
 ```
 
-The wizard prompts you for:
+The wizard asks for your RPC URL, max bid, and an encryption password, then prints a wallet address and a ready-to-paste agent config snippet.
 
-```
-Enter your Ethereum mainnet HTTP RPC URL (Alchemy/Infura): https://eth-mainnet.g.alchemy.com/v2/xxx
-Enter your Ethereum mainnet WebSocket RPC URL (leave blank to skip): wss://eth-mainnet.g.alchemy.com/v2/xxx
-Default max bid per auction (ETH) [default: 0.5]: 0.3
-Set an encryption password for the wallet key: ••••••••
-```
+**Step 3 — Fund the wallet**
 
-When setup finishes, the terminal prints:
+Send ETH to the wallet address printed by the wizard.
 
-```
-✓ Setup complete!
-  Wallet address : 0xABC...DEF
+**Step 4 — Add to agent config**
 
-→ Fund your wallet by sending ETH to:
-  0xABC...DEF
-
-→ Add to your agent config:
+```json
 {
   "mcpServers": {
     "genome-bid": {
-      "command": "npx",
-      "args": ["genome-bid-mcp"],
+      "command": "node",
+      "args": ["/path/to/Genome-MCP-Server/dist/index.js"],
       "env": {
+        "GENOME_RPC_HTTP_URL": "https://eth-mainnet.g.alchemy.com/v2/YOUR_KEY",
+        "GENOME_RPC_WS_URL": "wss://eth-mainnet.g.alchemy.com/v2/YOUR_KEY",
         "GENOME_BID_PASSWORD": "your_password"
       }
     }
@@ -111,263 +196,18 @@ When setup finishes, the terminal prints:
 }
 ```
 
-### Step 3 — Fund the wallet
+For full installation details and security model → see [DEVELOPMENT.md](./DEVELOPMENT.md)
 
-Send ETH to the wallet address printed above. This ETH is used for bids, gas fees, and Uniswap swaps. Start with a small amount to test.
+---
 
-### Step 4 — Configure your agent
+## Security
 
-Add the config snippet to your agent's MCP config file. For Claude Desktop, edit `~/Library/Application Support/Claude/claude_desktop_config.json`.
-
-When running from source, change `command` to `node` and `args` to `["/path/to/genome-bid-mcp/dist/index.js"]`.
-
-Restart the agent to pick up the new config.
-
-### Step 5 — Verify
-
-Ask your agent:
+The wallet key never leaves your machine. It is encrypted at rest with AES-GCM using a key derived from your password. Only fund the bidding wallet with what you are willing to use for bidding and swaps.
 
 ```
-Check my Genome bidding account status with get_wallet_info
+Your password  →  Encrypted key (~/.genome-bid/session.key)  →  MCP Server (local)  →  Ethereum
 ```
 
 ---
 
-## Usage Examples
-
-### Check current auction state
-
-```
-What is the current Genome auction status?
-```
-
-### Place a one-time bid
-
-```
-Place a single 0.3 ETH bid on Genome
-Submit one bid on Genome for exactly 0.28 ETH through Flashbots
-```
-
-### Start continuous monitoring
-
-```
-Watch the Genome auction and automatically outbid anyone who beats me, cap at 0.3 ETH
-```
-
-> Auto-bid uses the contract's live `minBidToOutbid` rule when deciding the next valid bid, rather than a fixed increment.
-
-### Snipe at end of auction
-
-```
-Snipe the Genome auction in the final seconds, up to 0.35 ETH
-```
-
-> Snipe mode fires in the last block before the deadline (~12 seconds on Ethereum), bids at the contract's live `minBidToOutbid`, and uses 5× priority fee plus Flashbots Protect to prevent MEV frontrunning.
-
-### Inspect snipe watcher status
-
-```
-Show my current Genome snipe status
-```
-
-### Inspect auto-bid monitor status
-
-```
-Show my current Genome auto-bid status
-```
-
-### Stop snipe watcher
-
-```
-Stop my current Genome snipe watcher
-```
-
-### Estimate current floor price
-
-```
-Estimate the current Genome floor price before I bid
-```
-
-> This is a spot estimate based on the current Uniswap quote for selling the embedded GENE in the next NFT. It does not include gas, slippage drift, or future price movement.
-
-### Run monitoring and snipe together
-
-```
-Start auto-bid on Genome (cap 0.3 ETH) and also snipe with up to 0.35 ETH at the end
-```
-
-### Analyze recent auction history
-
-```
-Analyze the last 10 Genome auction rounds
-```
-
-### Profile a competitor
-
-```
-Analyze how 0xABC... has been bidding in recent Genome auctions
-```
-
-### Buy GENE on Uniswap
-
-```
-Buy GENE with 0.1 ETH
-Buy exactly 500 GENE for me
-```
-
-### Sell GENE on Uniswap
-
-```
-Sell 200 GENE for ETH
-Sell enough GENE to get 0.05 ETH
-```
-
-### Withdraw ETH from bidding wallet
-
-```
-Withdraw 0.1 ETH from my Genome wallet to 0xABC...
-```
-
-### Withdraw GENE tokens
-
-```
-Send all my GENE tokens to 0xABC...
-```
-
-### View local bid submission history
-
-```
-Show the recent bid submissions this Genome server has recorded for me
-```
-
-### Stop auto-bidding
-
-```
-Stop the Genome auto-bid
-```
-
----
-
-## Ask About Genome
-
-Your agent has a built-in knowledge base about the Genome project (`docs/genome-project.md`). You can ask questions in plain language — no need to read the contract code yourself.
-
-**Project basics**
-
-```
-What is Genome?
-How many NFTs will ever exist?
-What is GENE?
-```
-
-**Auction mechanics**
-
-```
-How does the Genome auction work?
-What happens if someone outbids me?
-Does a new bid extend the auction timer?
-What is the minimum bid?
-```
-
-**Token economics**
-
-```
-What is the halving schedule?
-Where does the auction money go?
-How does the community treasury work?
-```
-
-**NFT artwork**
-
-```
-What do the letters on a Genome NFT mean?
-Why does the NFT image change over time?
-Is the artwork stored on-chain?
-What is the rarest letter?
-```
-
-**Balances and transfers**
-
-```
-How is my GENE balance calculated?
-What happens if I send GENE to someone who already has 10 NFTs?
-Can I send GENE without transferring the NFT?
-```
-
----
-
-## Security Model
-
-```
-Your encryption password  (only you know this)
-    │
-    ▼
-Wallet key  (~/.genome-bid/session.key, AES-GCM encrypted)
-    │  MCP protocol (stdio, local process)
-    ▼
-Genome Auto-Bid MCP Server
-    │  signed transactions → Ethereum RPC
-    ▼
-Genome contract / Uniswap V3
-```
-
-**The wallet key never leaves your machine.** It is encrypted at rest with AES-GCM using a key derived from your password. The MCP server decrypts it in memory at startup and uses it to sign transactions locally.
-
-**Isolation by funding:** Only send to the bidding wallet what you are willing to use for bidding and swaps. This limits exposure if the wallet key is ever compromised.
-
-**Local files:**
-
-```
-~/.genome-bid/
-├── session.key    # AES-GCM encrypted — requires GENOME_BID_PASSWORD to decrypt
-├── config.json    # Wallet address and strategy defaults (no secrets)
-├── rpc.json       # RPC URLs, stored separately because they may contain API keys
-└── history.jsonl  # Local bid submission history written by this MCP server, tagged by wallet
-```
-
----
-
-## FAQ
-
-**Q: What if I forget my password?**
-
-Re-run `npx genome-bid-mcp setup` to generate a new wallet key. Transfer any remaining funds from the old wallet address first.
-
-**Q: How do I withdraw ETH or GENE from the bidding wallet?**
-
-Use the `withdraw_eth` or `withdraw_gene` MCP tools directly from your agent.
-
-**Q: Why do I need two RPC URLs (HTTP and WebSocket)?**
-
-HTTP is used for sending transactions. WebSocket enables real-time block monitoring for precise snipe timing. If you only have HTTP, snipe works but polls at slightly higher latency.
-
-**Q: Does snipe_bid require a Flashbots API key?**
-
-No. `usePrivateMempool: true` (the default) uses `https://rpc.flashbots.net`, which requires no registration.
-
-**Q: Does a new bid extend the auction deadline?**
-
-No. The Genome contract fixes the deadline at `lastMintBlock + 104` blocks (~20 minutes per round on Ethereum mainnet). Bids do not extend the timer — this is precisely why the snipe strategy works.
-
-**Q: How does the swap_gene tool handle slippage?**
-
-It quotes the current price from Uniswap's on-chain QuoterV2 contract before every swap, then applies your configured slippage tolerance (default 0.5%) to set the minimum output or maximum input. The transaction reverts on-chain if the price moves beyond that tolerance.
-
-**Q: What exactly does get_bid_history show?**
-
-It shows the recent bid submissions recorded locally by this MCP server in `~/.genome-bid/history.jsonl` and tagged with the current wallet address. It is not a full on-chain bidding history, it does not currently backfill whether each bid eventually won or was outbid, and older history lines written before wallet tagging are ignored.
-
-**Q: Is get_floor_price a guaranteed risk-free floor?**
-
-No. It is a spot estimate based on the current Uniswap quote for selling the embedded GENE in the next NFT. Real recovery can differ because of gas costs, slippage, and price movement after you win.
-
----
-
-## Local Data
-
-| File | Contents |
-| ---- | -------- |
-| `~/.genome-bid/session.key` | AES-GCM encrypted wallet key |
-| `~/.genome-bid/config.json` | Wallet address and strategy defaults (no secrets) |
-| `~/.genome-bid/rpc.json` | RPC URLs, stored separately because they may contain API keys |
-| `~/.genome-bid/history.jsonl` | Local bid submission history tagged by wallet, one JSON record per line |
+*Built on [Model Context Protocol](https://modelcontextprotocol.io). Compatible with Claude Desktop, Cursor, and any MCP-compatible agent.*
