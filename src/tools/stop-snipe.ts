@@ -5,7 +5,7 @@ export function handleStopSnipe(): object {
   stopSnipe()
 
   return {
-    status: 'stopped',
+    status: before.watching ? 'stopped' : 'not-watching',
     wasWatching: before.watching,
     previousStatus: before.status,
     previousDecision: before.lastDecision,

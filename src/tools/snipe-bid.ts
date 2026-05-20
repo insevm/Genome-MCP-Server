@@ -20,6 +20,22 @@ export async function handleSnipeBid(args: SnipeBidArgs): Promise<object> {
 
   validatePositiveDecimal(args.maxEth, 'maxEth')
 
+  if (
+    args.triggerBlocks !== undefined &&
+    (!Number.isInteger(args.triggerBlocks) || args.triggerBlocks < 1)
+  ) {
+    throw new Error('triggerBlocks must be an integer >= 1')
+  }
+
+  if (
+    args.gasPriorityMultiplier !== undefined &&
+    (!Number.isFinite(args.gasPriorityMultiplier) ||
+      args.gasPriorityMultiplier < 1 ||
+      args.gasPriorityMultiplier > 20)
+  ) {
+    throw new Error('gasPriorityMultiplier must be a number between 1 and 20')
+  }
+
   const config = await loadConfig()
   const snipeDefs = config.defaults.snipe
 
