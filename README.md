@@ -156,47 +156,37 @@ Estimate the current Genome floor price
 
 ### Install the MCP Server
 
-**Prerequisites:** Node.js 20+, Ethereum mainnet RPC (HTTP required, WebSocket recommended for snipe precision)
+#### Let your agent install it
 
-**Step 1 — Clone and install**
+Copy the prompt below and send it to your AI agent — it will handle the full setup:
+
+```
+Please install the Genome Skill MCP server from https://github.com/insevm/Genome-MCP-Server
+
+Steps to follow:
+1. Clone the repo into a suitable local directory, then run: npm install && npm run build
+2. Ask me for: an Ethereum mainnet HTTP RPC URL (required, e.g. from Alchemy or Infura) and an optional WebSocket RPC URL (leave blank to skip)
+3. Ask me to set an encryption password for the wallet key (I need to remember this — it is required every time the MCP server starts)
+4. Run: node dist/index.js setup — enter the RPC URL, WebSocket URL, and password when prompted; record the wallet address it prints
+5. Register the MCP server in my agent config with GENOME_RPC_HTTP_URL, GENOME_RPC_WS_URL (optional), and GENOME_BID_PASSWORD in the env block
+6. Tell me the wallet address so I can send ETH to fund bidding
+7. Restart the agent to load the new config
+```
+
+#### Manual install
+
+**Prerequisites:** Node.js 20+, Ethereum mainnet RPC (HTTP required, WebSocket recommended for snipe precision)
 
 ```bash
 git clone https://github.com/insevm/Genome-MCP-Server.git
 cd Genome-MCP-Server
 npm install && npm run build
+node dist/index.js setup
 ```
 
-**Step 2 — Initialize wallet**
+The wizard asks for your RPC URL, max bid, and an encryption password, then prints a wallet address and a ready-to-paste agent config snippet. Fund the wallet with ETH and restart your agent.
 
-```bash
-npx genome-bid-mcp setup
-```
-
-The wizard asks for your RPC URL, max bid, and an encryption password, then prints a wallet address and a ready-to-paste agent config snippet.
-
-**Step 3 — Fund the wallet**
-
-Send ETH to the wallet address printed by the wizard.
-
-**Step 4 — Add to agent config**
-
-```json
-{
-  "mcpServers": {
-    "genome-bid": {
-      "command": "node",
-      "args": ["/path/to/Genome-MCP-Server/dist/index.js"],
-      "env": {
-        "GENOME_RPC_HTTP_URL": "https://eth-mainnet.g.alchemy.com/v2/YOUR_KEY",
-        "GENOME_RPC_WS_URL": "wss://eth-mainnet.g.alchemy.com/v2/YOUR_KEY",
-        "GENOME_BID_PASSWORD": "your_password"
-      }
-    }
-  }
-}
-```
-
-For full installation details and security model → see [DEVELOPMENT.md](./DEVELOPMENT.md)
+For full details and security model → see [DEVELOPMENT.md](./DEVELOPMENT.md)
 
 ---
 
