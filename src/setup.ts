@@ -75,6 +75,11 @@ export async function runSetup(mode: 'setup' | 'renew'): Promise<void> {
 
   const maxEth = (await prompt('Default max bid per auction (ETH) [default: 0.5]: ')) || '0.5'
   const password = await promptPassword('Set an encryption password for the wallet key: ')
+  const passwordConfirm = await promptPassword('Confirm encryption password: ')
+  if (password !== passwordConfirm) {
+    out('Passwords do not match. Aborting setup.')
+    process.exit(1)
+  }
 
   const privateKey = generateWalletKey()
   const walletAddress = getWalletAddress(privateKey)

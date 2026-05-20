@@ -81,11 +81,16 @@ export async function handlePlaceBid(
     )
   }
 
-  const txHash = await sendBid(config, privateKey, args.bidEth, {
-    usePrivateMempool: args.usePrivateMempool,
-    gasPriorityMultiplier: args.gasPriorityMultiplier,
-    dryRun: args.dryRun,
-  })
+  let txHash: string
+  try {
+    txHash = await sendBid(config, privateKey, args.bidEth, {
+      usePrivateMempool: args.usePrivateMempool,
+      gasPriorityMultiplier: args.gasPriorityMultiplier,
+      dryRun: args.dryRun,
+    })
+  } catch (err) {
+    throw new Error(`Bid submission failed: ${sanitizeRpcError(err, config.rpcHttpUrl)}`)
+  }
 
   if (!args.dryRun) {
     const record: BidRecord = {

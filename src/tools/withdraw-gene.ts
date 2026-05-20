@@ -4,7 +4,7 @@ import { sendGeneWithdrawal } from '../wallet.js'
 import { loadConfig } from '../store.js'
 import { isInitialized } from '../bidder.js'
 import { GENOME_CONTRACT, GENOME_ABI } from '../config.js'
-import { validateAddress, validatePositiveDecimal } from '../validate.js'
+import { validateAddress, validatePositiveDecimal, sanitizeRpcError } from '../validate.js'
 
 interface WithdrawGeneArgs {
   toAddress: string
@@ -26,12 +26,17 @@ export async function handleWithdrawGene(
   const config = await loadConfig()
   const client = createPublicClient({ chain: mainnet, transport: http(config.rpcHttpUrl) })
 
-  const totalBalanceRaw = await client.readContract({
-    address: GENOME_CONTRACT,
-    abi: GENOME_ABI,
-    functionName: 'balanceOf',
-    args: [config.walletAddress as Address],
-  }) as bigint
+  let totalBalanceRaw: bigint
+  try {
+    totalBalanceRaw = await client.readContract({
+      address: GENOME_CONTRACT,
+      abi: GENOME_ABI,
+      functionName: 'balanceOf',
+      args: [config.walletAddress as Address],
+    }) as bigint
+  } catch (err) {
+    throw new Error(`Failed to read GENE balance: ${sanitizeRpcError(err, config.rpcHttpUrl)}`)
+  }
 
   let amountGene = args.amountGene
   if (amountGene === 'all') {
@@ -46,9 +51,14 @@ export async function handleWithdrawGene(
     )
   }
 
-  const txHash = await sendGeneWithdrawal(config, privateKey, args.toAddress as Address, amountGene, {
-    dryRun: args.dryRun,
-  })
+  let txHash: string
+  try {
+    txHash = await sendGeneWithdrawal(config, privateKey, args.toAddress as Address, amountGene, {
+      dryRun: args.dryRun,
+    })
+  } catch (err) {
+    throw new Error(`Withdrawal failed: ${sanitizeRpcError(err, config.rpcHttpUrl)}`)
+  }
 
   return {
     status: args.dryRun ? 'dry-run' : 'submitted',

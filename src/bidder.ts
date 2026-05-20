@@ -167,6 +167,7 @@ async function tryBid(
 
 export function startAutoBid(cfg: AutoBidConfig): { ok: boolean; message: string } {
   if (state.autoBid.running) return { ok: false, message: 'auto-bid already running' }
+  if (state.snipe.watching) return { ok: false, message: 'snipe is already watching — stop it first with stop_snipe' }
   if (!state.privateKey || !state.appConfig)
     return { ok: false, message: 'bidder not initialized — GENOME_BID_PASSWORD missing?' }
 
@@ -178,8 +179,10 @@ export function startAutoBid(cfg: AutoBidConfig): { ok: boolean; message: string
   state.autoBid.nextBidEth = undefined
   state.autoBid.lastError = undefined
 
+  let inFlight = false
   const tick = async () => {
-    if (!state.autoBid.running || !state.appConfig) return
+    if (inFlight || !state.autoBid.running || !state.appConfig) return
+    inFlight = true
     const bidCfg = state.autoBid.config!
 
     try {
@@ -221,9 +224,11 @@ export function startAutoBid(cfg: AutoBidConfig): { ok: boolean; message: string
       const txHash = await tryBid(status, newBid, { gasStrategy: bidCfg.gasStrategy, dryRun: bidCfg.dryRun })
       state.autoBid.lastAction = `bid ${newBid} ETH tx:${txHash}`
     } catch (err) {
-      const msg = sanitizeRpcError(err, state.appConfig?.rpcHttpUrl ?? '')
+      const msg = sanitizeRpcError(err, state.appConfig!.rpcHttpUrl)
       state.autoBid.lastError = msg
       state.autoBid.lastAction = `error: ${msg}`
+    } finally {
+      inFlight = false
     }
   }
 
@@ -261,6 +266,7 @@ export function getAutoBidState() {
 
 export function startSnipe(cfg: SnipeConfig): { ok: boolean; message: string } {
   if (state.snipe.watching) return { ok: false, message: 'snipe already watching' }
+  if (state.autoBid.running) return { ok: false, message: 'auto-bid is already running — stop it first with stop_auto_bid' }
   if (!state.privateKey || !state.appConfig)
     return { ok: false, message: 'bidder not initialized' }
 

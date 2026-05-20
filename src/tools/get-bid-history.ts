@@ -5,7 +5,8 @@ interface GetBidHistoryArgs {
 }
 
 export async function handleGetBidHistory(args: GetBidHistoryArgs): Promise<object> {
-  const limit = Math.min(args.limit ?? 20, 500)
+  const rawLimit = args.limit ?? 20
+  const limit = Math.max(1, Math.min(Number.isFinite(rawLimit) ? rawLimit : 20, 500))
   const config = await loadConfig()
   const records = await readBidHistory(limit, config.walletAddress)
   return {

@@ -3,7 +3,7 @@ import { mainnet } from 'viem/chains'
 import { sendEthWithdrawal } from '../wallet.js'
 import { loadConfig } from '../store.js'
 import { isInitialized } from '../bidder.js'
-import { validateAddress, validatePositiveDecimal } from '../validate.js'
+import { validateAddress, validatePositiveDecimal, sanitizeRpcError } from '../validate.js'
 
 interface WithdrawEthArgs {
   toAddress: string
@@ -26,7 +26,12 @@ export async function handleWithdrawEth(
 
   const config = await loadConfig()
   const client = createPublicClient({ chain: mainnet, transport: http(config.rpcHttpUrl) })
-  const balance = await client.getBalance({ address: config.walletAddress as Address })
+  let balance: bigint
+  try {
+    balance = await client.getBalance({ address: config.walletAddress as Address })
+  } catch (err) {
+    throw new Error(`Failed to read ETH balance: ${sanitizeRpcError(err, config.rpcHttpUrl)}`)
+  }
 
   let amountEth = args.amountEth
   if (amountEth === 'all') {
@@ -45,9 +50,14 @@ export async function handleWithdrawEth(
     )
   }
 
-  const txHash = await sendEthWithdrawal(config, privateKey, args.toAddress as Address, amountEth, {
-    dryRun: args.dryRun,
-  })
+  let txHash: string
+  try {
+    txHash = await sendEthWithdrawal(config, privateKey, args.toAddress as Address, amountEth, {
+      dryRun: args.dryRun,
+    })
+  } catch (err) {
+    throw new Error(`Withdrawal failed: ${sanitizeRpcError(err, config.rpcHttpUrl)}`)
+  }
 
   return {
     status: args.dryRun ? 'dry-run' : 'submitted',

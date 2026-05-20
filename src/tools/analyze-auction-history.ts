@@ -31,7 +31,7 @@ export async function handleAnalyzeAuctionHistory(args: AnalyzeAuctionHistoryArg
   try {
     currentBlock = await client.getBlockNumber()
   } catch (err: unknown) {
-    return { error: `Failed to fetch block number: ${sanitizeRpcError(err, config.rpcHttpUrl)}` }
+    throw new Error(`Failed to fetch block number: ${sanitizeRpcError(err, config.rpcHttpUrl)}`)
   }
 
   // Add 2-round buffer to ensure enough settled events are captured
@@ -45,12 +45,12 @@ export async function handleAnalyzeAuctionHistory(args: AnalyzeAuctionHistoryArg
   try {
     fetchResult = await fetchLogs()
   } catch (err: unknown) {
-    return { error: `Failed to fetch on-chain logs: ${sanitizeRpcError(err, config.rpcHttpUrl)}. Try reducing rounds or check your RPC provider limits.` }
+    throw new Error(`Failed to fetch on-chain logs: ${sanitizeRpcError(err, config.rpcHttpUrl)}. Try reducing rounds or check your RPC provider limits.`)
   }
   const [settledLogs, bidLogs] = fetchResult
 
   if (settledLogs.length === 0) {
-    return { error: 'No completed auction rounds found in block range. Try increasing rounds.' }
+    throw new Error('No completed auction rounds found in block range. Try increasing rounds.')
   }
 
   const sortedSettled = [...settledLogs].sort((a, b) => Number(a.blockNumber) - Number(b.blockNumber))

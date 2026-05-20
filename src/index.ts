@@ -55,7 +55,7 @@ const TOOLS: Tool[] = [
   {
     name: 'start_auto_bid',
     description:
-      'Start an automatic bid monitor. Watches the auction and, within the leadBlocks window, bids the contract-required minBidToOutbid whenever the wallet is outbid, up to maxEth. Runs in the background until stop_auto_bid is called. Use for auctions where you want continuous protection throughout the round.',
+      'Start an automatic bid monitor. Watches the auction and, within the leadBlocks window, bids the contract-required minBidToOutbid whenever the wallet is outbid, up to maxEth. Runs in the background until stop_auto_bid is called. Use for auctions where you want continuous protection throughout the round. Cannot run simultaneously with snipe_bid.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -81,7 +81,7 @@ const TOOLS: Tool[] = [
   {
     name: 'snipe_bid',
     description:
-      'End-of-auction snipe strategy. Fires a single bid at the contract-required minBidToOutbid in the final N blocks with aggressive gas and Flashbots private mempool. Use when you want to avoid revealing intent early; combine with start_auto_bid for full coverage throughout the round.',
+      'End-of-auction snipe strategy. Fires a single bid at the contract-required minBidToOutbid in the final N blocks with aggressive gas and Flashbots private mempool. Use when you want to avoid revealing intent early. Cannot run simultaneously with start_auto_bid — stop one before starting the other.',
     inputSchema: {
       type: 'object',
       properties: {

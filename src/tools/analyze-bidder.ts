@@ -30,7 +30,7 @@ export async function handleAnalyzeBidder(args: AnalyzeBidderArgs): Promise<obje
   try {
     currentBlock = await client.getBlockNumber()
   } catch (err: unknown) {
-    return { error: `Failed to fetch block number: ${sanitizeRpcError(err, config.rpcHttpUrl)}` }
+    throw new Error(`Failed to fetch block number: ${sanitizeRpcError(err, config.rpcHttpUrl)}`)
   }
   const fromBlock = currentBlock - BigInt(rounds + 2) * BLOCK_PER_MINT
 
@@ -54,7 +54,7 @@ export async function handleAnalyzeBidder(args: AnalyzeBidderArgs): Promise<obje
   try {
     fetchResult = await fetchLogs()
   } catch (err: unknown) {
-    return { error: `Failed to fetch on-chain logs: ${sanitizeRpcError(err, config.rpcHttpUrl)}. Try reducing rounds or check your RPC provider limits.` }
+    throw new Error(`Failed to fetch on-chain logs: ${sanitizeRpcError(err, config.rpcHttpUrl)}. Try reducing rounds or check your RPC provider limits.`)
   }
   const [bidLogs, settledLogs] = fetchResult
 

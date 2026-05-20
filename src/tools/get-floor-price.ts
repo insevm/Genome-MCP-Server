@@ -74,11 +74,11 @@ export async function handleGetFloorPrice(): Promise<object> {
   try {
     ;({ latestTokenId, poolFee } = await fetchPoolState(client, config.rpcHttpUrl))
   } catch (err: unknown) {
-    return { error: (err as Error).message }
+    throw err
   }
 
   if (poolFee === 0) {
-    return { error: 'Pool fee tier is zero — the pool address may be incorrect.' }
+    throw new Error('Pool fee tier is zero — the pool address may be incorrect.')
   }
 
   const nextTokenId = latestTokenId + 1n
@@ -86,14 +86,14 @@ export async function handleGetFloorPrice(): Promise<object> {
   const embeddedWei = geneEmbeddedWei(nextTokenId)
 
   if (embeddedWei === 0n) {
-    return { error: 'All 21,000 NFTs have been minted. GENE issuance is complete.' }
+    throw new Error('All 21,000 NFTs have been minted. GENE issuance is complete.')
   }
 
   let ethOutWei: bigint
   try {
     ethOutWei = await quoteGeneToEth(client, embeddedWei, poolFee, config.rpcHttpUrl)
   } catch (err: unknown) {
-    return { error: (err as Error).message }
+    throw err
   }
 
   const genePriceWei = (ethOutWei * 10n ** 18n) / embeddedWei

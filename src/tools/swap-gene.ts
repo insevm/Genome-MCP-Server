@@ -22,6 +22,7 @@ import {
 } from '../config.js'
 import { loadConfig } from '../store.js'
 import { isInitialized } from '../bidder.js'
+import { sanitizeRpcError, validatePositiveDecimal } from '../validate.js'
 
 interface SwapGeneArgs {
   direction: 'buy' | 'sell'
@@ -58,6 +59,8 @@ export async function handleSwapGene(
   if (!args.ethAmount && !args.geneAmount) {
     throw new Error('Provide either ethAmount or geneAmount.')
   }
+  if (args.ethAmount) validatePositiveDecimal(args.ethAmount, 'ethAmount')
+  if (args.geneAmount) validatePositiveDecimal(args.geneAmount, 'geneAmount')
 
   const config = await loadConfig()
   const account = privateKeyToAccount(privateKey)
@@ -70,6 +73,7 @@ export async function handleSwapGene(
 
   // ── BUY: ETH → GENE ──────────────────────────────────────────────────────────
 
+  try {
   if (direction === 'buy') {
     if (args.ethAmount) {
       // exactInputSingle: spend exact ETH, receive variable GENE
@@ -167,24 +171,34 @@ export async function handleSwapGene(
 
   // Ensure SwapRouter allowance for GENE
   async function ensureAllowance(amount: bigint) {
-    const allowance = await publicClient.readContract({
-      address: GENOME_CONTRACT,
-      abi: GENOME_ABI,
-      functionName: 'allowance',
-      args: [walletAddress, UNISWAP_SWAP_ROUTER],
-    }) as bigint
+    let allowance: bigint
+    try {
+      allowance = await publicClient.readContract({
+        address: GENOME_CONTRACT,
+        abi: GENOME_ABI,
+        functionName: 'allowance',
+        args: [walletAddress, UNISWAP_SWAP_ROUTER],
+      }) as bigint
+    } catch (err) {
+      throw new Error(`Failed to read GENE allowance: ${sanitizeRpcError(err, config.rpcHttpUrl)}`)
+    }
 
     if (allowance >= amount) return
 
-    const approveTx = await walletClient.sendTransaction({
-      to: GENOME_CONTRACT,
-      data: encodeFunctionData({
-        abi: GENOME_ABI,
-        functionName: 'approve',
-        args: [UNISWAP_SWAP_ROUTER, amount],
-      }),
-    })
-    await publicClient.waitForTransactionReceipt({ hash: approveTx, timeout: 120_000 })
+    let approveTx: `0x${string}`
+    try {
+      approveTx = await walletClient.sendTransaction({
+        to: GENOME_CONTRACT,
+        data: encodeFunctionData({
+          abi: GENOME_ABI,
+          functionName: 'approve',
+          args: [UNISWAP_SWAP_ROUTER, amount],
+        }),
+      })
+      await publicClient.waitForTransactionReceipt({ hash: approveTx, timeout: 120_000 })
+    } catch (err) {
+      throw new Error(`GENE approve transaction failed: ${sanitizeRpcError(err, config.rpcHttpUrl)}`)
+    }
   }
 
   if (args.geneAmount) {
@@ -289,5 +303,8 @@ export async function handleSwapGene(
       geneEstimated: formatEther(amountIn),
       geneMaximum: formatEther(amountInMax),
     }
+  }
+  } catch (err) {
+    throw new Error(sanitizeRpcError(err, config.rpcHttpUrl))
   }
 }
