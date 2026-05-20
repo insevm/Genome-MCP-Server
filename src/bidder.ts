@@ -19,7 +19,10 @@ interface BidderState {
     lastCheckedAt: string | undefined
     lastObservedAuction: AuctionStatus | undefined
     nextBidEth: string | undefined
+    lastTxHash: string | undefined
     lastError: string | undefined
+    sessionBidCount: number
+    sessionEthSpentWei: bigint
   }
   snipe: {
     watching: boolean
@@ -50,7 +53,10 @@ const state: BidderState = {
     lastCheckedAt: undefined,
     lastObservedAuction: undefined,
     nextBidEth: undefined,
+    lastTxHash: undefined,
     lastError: undefined,
+    sessionBidCount: 0,
+    sessionEthSpentWei: 0n,
   },
   snipe: {
     watching: false,
@@ -156,9 +162,14 @@ async function tryBid(
     txHash,
     bidEth,
     tokenId: status.latestTokenId,
+    blockNumber: status.currentBlock,
     result: 'pending',
   }
-  await appendBidRecord(record)
+  try {
+    await appendBidRecord(record)
+  } catch {
+    // Record failure must not obscure a submitted transaction
+  }
 
   return txHash
 }
@@ -177,7 +188,10 @@ export function startAutoBid(cfg: AutoBidConfig): { ok: boolean; message: string
   state.autoBid.lastCheckedAt = undefined
   state.autoBid.lastObservedAuction = undefined
   state.autoBid.nextBidEth = undefined
+  state.autoBid.lastTxHash = undefined
   state.autoBid.lastError = undefined
+  state.autoBid.sessionBidCount = 0
+  state.autoBid.sessionEthSpentWei = 0n
 
   let inFlight = false
   const tick = async () => {
@@ -222,6 +236,11 @@ export function startAutoBid(cfg: AutoBidConfig): { ok: boolean; message: string
 
       const newBid = status.minBidToOutbid
       const txHash = await tryBid(status, newBid, { gasStrategy: bidCfg.gasStrategy, dryRun: bidCfg.dryRun })
+      if (!bidCfg.dryRun) {
+        state.autoBid.lastTxHash = txHash
+        state.autoBid.sessionBidCount++
+        state.autoBid.sessionEthSpentWei += parseEther(newBid)
+      }
       state.autoBid.lastAction = `bid ${newBid} ETH tx:${txHash}`
     } catch (err) {
       const msg = sanitizeRpcError(err, state.appConfig!.rpcHttpUrl)
@@ -258,7 +277,12 @@ export function getAutoBidState() {
     lastCheckedAt: state.autoBid.lastCheckedAt,
     lastObservedAuction: state.autoBid.lastObservedAuction,
     nextBidEth: state.autoBid.nextBidEth,
+    lastTxHash: state.autoBid.lastTxHash,
     lastError: state.autoBid.lastError,
+    session: {
+      bidCount: state.autoBid.sessionBidCount,
+      ethSpent: formatEther(state.autoBid.sessionEthSpentWei) + ' ETH',
+    },
   }
 }
 
