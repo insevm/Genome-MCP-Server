@@ -2,6 +2,7 @@ import * as readline from 'readline'
 import { generateWalletKey, getWalletAddress } from './wallet.js'
 import { saveSessionKey, saveConfig } from './store.js'
 import { GENOME_CONTRACT } from './config.js'
+import { validatePositiveDecimal } from './validate.js'
 import type { Config } from './types.js'
 
 function prompt(question: string): Promise<string> {
@@ -77,9 +78,21 @@ export async function runSetup(mode: 'setup' | 'renew'): Promise<void> {
     process.env.GENOME_BID_MAX_ETH ??
     ((await prompt('Default max bid per auction (ETH) [default: 0.5]: ')) || '0.5')
 
+  try {
+    validatePositiveDecimal(maxEth, 'GENOME_BID_MAX_ETH / maxEth')
+  } catch (err) {
+    out(`Invalid maxEth value: ${(err as Error).message}. Aborting setup.`)
+    process.exit(1)
+  }
+
   let password: string
-  if (process.env.GENOME_BID_PASSWORD) {
-    password = process.env.GENOME_BID_PASSWORD
+  const envPassword = process.env.GENOME_BID_PASSWORD
+  if (envPassword !== undefined && envPassword.length > 0) {
+    if (envPassword.length < 12) {
+      out('GENOME_BID_PASSWORD must be at least 12 characters. Aborting setup.')
+      process.exit(1)
+    }
+    password = envPassword
     out('Using GENOME_BID_PASSWORD from environment (non-interactive mode).')
   } else {
     password = await promptPassword('Set an encryption password for the wallet key: ')

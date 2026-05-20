@@ -223,7 +223,7 @@ async function main() {
   if (!exists) {
     process.stderr.write('[genome-bid-mcp] No config found. Run: npx genome-bid-mcp setup\n')
   } else {
-    if (!password) {
+    if (!password || password.length === 0) {
       process.stderr.write('[genome-bid-mcp] GENOME_BID_PASSWORD env var not set — bid tools will fail.\n')
     } else if (rpcHttpUrl) {
       try {
