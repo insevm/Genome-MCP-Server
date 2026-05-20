@@ -23,6 +23,7 @@ interface BidderState {
     lastError: string | undefined
     sessionBidCount: number
     sessionEthSpentWei: bigint
+    stoppedAt: string | undefined
   }
   snipe: {
     watching: boolean
@@ -57,6 +58,7 @@ const state: BidderState = {
     lastError: undefined,
     sessionBidCount: 0,
     sessionEthSpentWei: 0n,
+    stoppedAt: undefined,
   },
   snipe: {
     watching: false,
@@ -192,6 +194,7 @@ export function startAutoBid(cfg: AutoBidConfig): { ok: boolean; message: string
   state.autoBid.lastError = undefined
   state.autoBid.sessionBidCount = 0
   state.autoBid.sessionEthSpentWei = 0n
+  state.autoBid.stoppedAt = undefined
 
   let inFlight = false
   const tick = async () => {
@@ -257,16 +260,24 @@ export function startAutoBid(cfg: AutoBidConfig): { ok: boolean; message: string
   return { ok: true, message: 'started' }
 }
 
-export function stopAutoBid(): string {
-  const last = state.autoBid.lastAction
+export function stopAutoBid(): { wasRunning: boolean; lastAction: string; session: { bidCount: number; ethSpent: string } } {
+  const wasRunning = state.autoBid.running
+  const lastAction = state.autoBid.lastAction
+  const session = {
+    bidCount: state.autoBid.sessionBidCount,
+    ethSpent: formatEther(state.autoBid.sessionEthSpentWei) + ' ETH',
+  }
+
   state.autoBid.running = false
   state.autoBid.config = null
   state.autoBid.nextBidEth = undefined
+  state.autoBid.stoppedAt = new Date().toISOString()
   if (state.autoBid.intervalId) {
     clearInterval(state.autoBid.intervalId)
     state.autoBid.intervalId = null
   }
-  return last
+
+  return { wasRunning, lastAction, session }
 }
 
 export function getAutoBidState() {
@@ -279,6 +290,7 @@ export function getAutoBidState() {
     nextBidEth: state.autoBid.nextBidEth,
     lastTxHash: state.autoBid.lastTxHash,
     lastError: state.autoBid.lastError,
+    stoppedAt: state.autoBid.stoppedAt,
     session: {
       bidCount: state.autoBid.sessionBidCount,
       ethSpent: formatEther(state.autoBid.sessionEthSpentWei) + ' ETH',

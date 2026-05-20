@@ -1,6 +1,10 @@
 import { stopAutoBid } from '../bidder.js'
 
 export function handleStopAutoBid(): object {
-  const lastAction = stopAutoBid()
-  return { status: 'stopped', lastAction }
+  const { wasRunning, lastAction, session } = stopAutoBid()
+  return {
+    status: wasRunning ? 'stopped' : 'not-running',
+    lastAction,
+    session,
+  }
 }
