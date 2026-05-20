@@ -459,13 +459,24 @@ export function startSnipe(cfg: SnipeConfig): { ok: boolean; message: string } {
     state.snipe.unwatch = wsClient.watchBlocks({
       onBlock: () => { void onBlock() },
       onError: (err) => {
-        const message = `watchBlocks error: ${sanitizeRpcError(err, config.rpcHttpUrl)}`
-        state.snipe.lastError = message
-        state.snipe.lastDecision = message
-        state.snipe.status = 'failed'
-        state.snipe.stopReason = 'watchBlocks error'
-        pushEvent({ type: 'error', strategy: 'snipe', timestamp: new Date().toISOString(), message: `[snipe] ${message}` })
-        _stopSnipeWatcher()
+        const errMsg = sanitizeRpcError(err, config.rpcHttpUrl)
+        const warnMsg = `WebSocket error, falling back to HTTP polling: ${errMsg}`
+        process.stderr.write(`[genome-bid-mcp] [snipe] ${warnMsg}\n`)
+        state.snipe.lastError = errMsg
+        state.snipe.transport = 'http-polling'
+        state.snipe.lastDecision = 'WebSocket dropped, continuing via HTTP polling'
+
+        // Detach WS without stopping the overall snipe session (capture ref first to avoid re-entrancy)
+        const wsUnwatch = state.snipe.unwatch
+        state.snipe.unwatch = null
+        wsUnwatch?.()
+
+        pushEvent({ type: 'error', strategy: 'snipe', timestamp: new Date().toISOString(), message: `[snipe] ${warnMsg}` })
+
+        // Continue watching via HTTP polling
+        const id = setInterval(() => { void onBlock() }, 3_000)
+        state.snipe.unwatch = () => clearInterval(id)
+        void onBlock()
       },
     })
   } else {

@@ -27,7 +27,12 @@ export function sanitizeRpcError(err: unknown, rpcUrl: string): string {
     parts.push(current.message)
     current = (current as NodeJS.ErrnoException & { cause?: unknown }).cause
   }
-  if (typeof current === 'string') parts.push(current)
+  if (typeof current === 'string') {
+    parts.push(current)
+  } else if (current !== null && current !== undefined) {
+    // Non-Error, non-string tail — covers WS error events and Error cause chains ending in objects
+    try { parts.push(JSON.stringify(current)) } catch { parts.push(String(current)) }
+  }
   const raw = parts.join(' | ')
   const withLiteral = rpcUrl ? raw.replaceAll(rpcUrl, '<rpc-url>') : raw
   return withLiteral
