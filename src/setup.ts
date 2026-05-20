@@ -121,7 +121,7 @@ export async function runSetup(mode: 'setup' | 'renew'): Promise<void> {
       snipe: {
         triggerBlocks: 1,
         gasPriorityMultiplier: 5.0,
-        usePrivateMempool: true,
+        usePrivateMempool: false,
       },
     },
   }

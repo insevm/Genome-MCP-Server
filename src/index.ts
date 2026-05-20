@@ -99,7 +99,7 @@ const TOOLS: Tool[] = [
         maxEth: { type: 'string', description: 'Maximum bid in ETH' },
         triggerBlocks: { type: 'number', description: 'Fire when this many blocks remain before deadline. Default 1.' },
         gasPriorityMultiplier: { type: 'number', description: 'Multiply maxPriorityFeePerGas by this factor. Default 5.0' },
-        usePrivateMempool: { type: 'boolean', description: 'Submit via Flashbots Protect. Default true.' },
+        usePrivateMempool: { type: 'boolean', description: 'Submit via Flashbots Protect. Default false.' },
         dryRun: { type: 'boolean', description: 'Simulate without sending transactions' },
       },
       required: ['maxEth'],
