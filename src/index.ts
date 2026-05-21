@@ -57,7 +57,7 @@ const TOOLS: Tool[] = [
     description:
       'Start the unified bid watcher. Two-phase strategy: if no one else has bid when the trigger window opens, enters at the minimum price with normal gas (first-mover); if a competitor is present, fires a snipe bid with aggressive gas at the contract-required minBidToOutbid. ' +
       'Uses WebSocket block subscription when available, falls back to HTTP polling (3 s interval). ' +
-      'Runs until the bid fires, maxEth is exceeded, or stop_bid is called. Use get_bid_watcher_status to monitor progress.',
+      'Runs continuously across auction rounds until stop_bid is called. Skips rounds where the required bid exceeds maxEth. Use get_bid_watcher_status to monitor progress.',
     inputSchema: {
       type: 'object',
       properties: {

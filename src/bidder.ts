@@ -201,6 +201,7 @@ async function _handleFirstMover(status: WatcherTick, watchCfg: BidWatcherConfig
   const bidEth = applyBuffer(status.minBidToOutbid, watchCfg.bidBuffer, watchCfg.maxEth)
   const txHash = await tryBid(status, bidEth, {
     gasPriorityMultiplier: 1,
+    minPriorityFeeGwei: watchCfg.minPriorityFeeGwei,
     dryRun: watchCfg.dryRun,
   })
   state.watcher.firstBidTxHash = txHash
@@ -290,10 +291,12 @@ export function startBidWatcher(cfg: BidWatcherConfig): { ok: boolean; message: 
   state.watcher.stopReason = undefined
   state.watcher.lastError = undefined
   state.watcher.stoppedAt = undefined
+  roundMaxExceeded = false
 
   let inFlight = false
   let consecutiveErrors = 0
   let cachedDeadlineBlock = 0
+  let lastObservedWinner = ''
   const MAX_CONSECUTIVE_ERRORS = 5
 
   const onBlock = async () => {
@@ -313,6 +316,14 @@ export function startBidWatcher(cfg: BidWatcherConfig): { ok: boolean; message: 
       state.watcher.lastCheckedAt = checkedAt
       state.watcher.lastObservedAuction = status
       state.watcher.lastError = undefined
+
+      // Detect early round rollover: winner reverted to zero while deadline
+      // appeared future — cached deadline is stale, force a re-fetch.
+      const winnerIsZero = status.winner.toLowerCase() === ZERO_ADDRESS
+      if (winnerIsZero && lastObservedWinner && lastObservedWinner !== ZERO_ADDRESS) {
+        cachedDeadlineBlock = 0
+      }
+      lastObservedWinner = status.winner.toLowerCase()
 
       if (status.blocksRemaining <= 0) {
         cachedDeadlineBlock = 0
@@ -468,6 +479,7 @@ export function stopBidWatcher(): void {
   state.watcher.stoppedAt = undefined
   state.watcher.lastDecision = 'stopped manually'
   state.watcher.stopReason = 'stopped manually'
+  roundMaxExceeded = false
 }
 
 export function getBidWatcherState(): BidWatcherSnapshot {

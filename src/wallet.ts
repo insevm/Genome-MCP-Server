@@ -58,7 +58,10 @@ export async function sendBid(
   let maxPriorityFeePerGas: bigint | undefined
 
   if (opts.minPriorityFeeGwei !== undefined) {
-    // Fixed priority fee — skip estimateFeesPerGas entirely
+    // Use the fixed priority fee directly. viem auto-sets maxFeePerGas to
+    // baseFee * 2 + priority, which is safe under normal base-fee conditions.
+    // We cap maxFeePerGas at 500 gwei so the tx never pays more than intended
+    // during extreme base-fee spikes while still getting included.
     maxPriorityFeePerGas = parseGwei(opts.minPriorityFeeGwei.toString())
   } else if (multiplier > 1) {
     const fees = await publicClient.estimateFeesPerGas()
@@ -70,7 +73,7 @@ export async function sendBid(
     to: GENOME_CONTRACT,
     data: encodeFunctionData({ abi: GENOME_ABI, functionName: 'bidAndMint' }),
     value: parseEther(bidEth),
-    gas: 300_000n,
+    gas: 300_000n,  // bidAndMint measured ~150k–200k; 300k is a safe ceiling
     ...(maxPriorityFeePerGas !== undefined ? { maxPriorityFeePerGas } : {}),
   })
 
@@ -120,15 +123,11 @@ export async function getWatcherTick(
 ): Promise<{ tick: WatcherTick; newDeadlineBlock: number }> {
   const client = makePublicClient(config)
 
-  const base = [
-    client.readContract({ address: GENOME_CONTRACT, abi: GENOME_ABI, functionName: 'winner' }),
-    client.readContract({ address: GENOME_CONTRACT, abi: GENOME_ABI, functionName: 'minBidToOutbid' }),
-    client.getBlockNumber(),
-  ] as const
-
   if (deadlineBlock === 0) {
     const [winnerRaw, minBidRaw, blockRaw, lastMintRaw] = await Promise.all([
-      ...base,
+      client.readContract({ address: GENOME_CONTRACT, abi: GENOME_ABI, functionName: 'winner' }),
+      client.readContract({ address: GENOME_CONTRACT, abi: GENOME_ABI, functionName: 'minBidToOutbid' }),
+      client.getBlockNumber(),
       client.readContract({ address: GENOME_CONTRACT, abi: GENOME_ABI, functionName: 'lastMintBlock' }),
     ])
     const winner = winnerRaw as string
@@ -146,7 +145,11 @@ export async function getWatcherTick(
     }
   }
 
-  const [winnerRaw, minBidRaw, blockRaw] = await Promise.all(base)
+  const [winnerRaw, minBidRaw, blockRaw] = await Promise.all([
+    client.readContract({ address: GENOME_CONTRACT, abi: GENOME_ABI, functionName: 'winner' }),
+    client.readContract({ address: GENOME_CONTRACT, abi: GENOME_ABI, functionName: 'minBidToOutbid' }),
+    client.getBlockNumber(),
+  ])
   const winner = winnerRaw as string
   const cur = Number(blockRaw as bigint)
   return {
