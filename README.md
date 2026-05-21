@@ -50,7 +50,7 @@ Auction proceeds continuously support GENE's market liquidity and price floor.
 - Minimum bid: **0.0001 ETH**
 - Fixed deadline — bids do **not** extend the timer
 - When outbid, your ETH is returned immediately
-- One wallet can hold a maximum of **10 NFTs**
+- The **transfer** function enforces a **10 NFT per wallet** limit — but winning auctions can push a wallet above this cap
 
 ---
 
