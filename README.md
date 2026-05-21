@@ -157,7 +157,7 @@ Estimate the current Genome floor price
 Copy the prompt below and send it to your AI agent — it will handle the full setup:
 
 ```
-Please install the Genome Skill MCP server from https://github.com/insevm/Genome-MCP-Server
+Please install the Genome Skill and its MCP server from https://github.com/insevm/Genome-MCP-Server
 
 Steps to follow:
 1. Clone the repo into a suitable local directory, then run: npm install && npm run build
