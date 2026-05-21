@@ -1,5 +1,7 @@
 # Genome Skill
 
+[中文](./README.zh.md)
+
 > Genome NFT project distilled into an AI skill — your agent understands the project deeply and can participate in on-chain auctions.
 
 **Ethereum** · **21,000 NFT hard cap** · **21,000,000 GENE hard cap** · **~20 min auction cycle**
