@@ -7,6 +7,7 @@ import { sanitizeRpcError } from './validate.js'
 import type { Config, AuctionStatus, BidWatcherConfig, BidWatcherSnapshot, BidRecord, BidEvent } from './types.js'
 
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000'
+let roundMaxExceeded = false
 
 // Apply bidBuffer on top of minBidToOutbid, capped at maxEth.
 function applyBuffer(minBidEth: string, bidBuffer: number, maxEth: string): string {
@@ -193,7 +194,8 @@ function _resetForNewRound(): void {
   state.watcher.triggeredAtBlock = undefined
   state.watcher.triggeredAt = undefined
   state.watcher.nextBidEth = undefined
-  state.watcher.lastDecision = 'auction settled, waiting for next round'
+  state.watcher.lastDecision = 'auction settled, watching for next round'
+  roundMaxExceeded = false
 }
 
 async function _handleFirstMover(status: AuctionStatus, watchCfg: BidWatcherConfig): Promise<void> {
@@ -224,18 +226,18 @@ async function _handleSnipe(
   checkedAt: string,
 ): Promise<void> {
   if (parseEther(status.minBidToOutbid) > parseEther(watchCfg.maxEth)) {
-    const msg = `next bid ${status.minBidToOutbid} ETH exceeds max ${watchCfg.maxEth} ETH`
-    state.watcher.status = 'failed'
+    const msg = `next bid ${status.minBidToOutbid} ETH exceeds max ${watchCfg.maxEth} ETH, skipping round`
     state.watcher.lastDecision = msg
-    state.watcher.stopReason = 'required bid exceeded maxEth'
-    pushEvent({
-      type: 'max_eth_exceeded',
-      strategy: 'bid-watcher',
-      timestamp: new Date().toISOString(),
-      message: `[bid] ${msg}`,
-      tokenId: status.latestTokenId,
-    })
-    _stopWatcher()
+    if (!roundMaxExceeded) {
+      roundMaxExceeded = true
+      pushEvent({
+        type: 'max_eth_exceeded',
+        strategy: 'bid-watcher',
+        timestamp: new Date().toISOString(),
+        message: `[bid] ${msg}`,
+        tokenId: status.latestTokenId,
+      })
+    }
     return
   }
 
@@ -254,8 +256,7 @@ async function _handleSnipe(
   // Set status AFTER the tx resolves so observers never see 'fired' without a txHash
   state.watcher.status = 'fired'
   state.watcher.txHash = txHash
-  state.watcher.lastDecision = `snipe bid submitted: ${bidEth} ETH tx:${txHash}`
-  state.watcher.stopReason = 'snipe bid submitted'
+  state.watcher.lastDecision = `snipe bid submitted: ${bidEth} ETH tx:${txHash}, watching for next round`
 
   if (!watchCfg.dryRun) {
     pushEvent({
@@ -268,7 +269,6 @@ async function _handleSnipe(
       bidEth,
     })
   }
-  _stopWatcher()
 }
 
 // ── Bid Watcher ───────────────────────────────────────────────────────────────
@@ -303,7 +303,7 @@ export function startBidWatcher(cfg: BidWatcherConfig): { ok: boolean; message: 
     if (!state.watcher.active || !state.appConfig) return
     const watchCfg = state.watcher.config!
 
-    if (state.watcher.status === 'fired' || inFlight) return
+    if (inFlight) return
     inFlight = true
 
     try {
@@ -319,13 +319,16 @@ export function startBidWatcher(cfg: BidWatcherConfig): { ok: boolean; message: 
         return
       }
 
+      // Already acted this round — wait for it to end
+      if (state.watcher.status === 'fired' || state.watcher.status === 'won') {
+        return
+      }
+
       state.watcher.nextBidEth = status.minBidToOutbid
 
       if (status.isUserWinning) {
         state.watcher.status = 'won'
-        state.watcher.lastDecision = `already winning at ${status.topBid} ETH`
-        state.watcher.stopReason = 'wallet is already winning'
-        _stopWatcher()
+        state.watcher.lastDecision = `already winning at ${status.topBid} ETH, watching for next round`
         return
       }
 
@@ -357,9 +360,8 @@ export function startBidWatcher(cfg: BidWatcherConfig): { ok: boolean; message: 
       state.watcher.lastDecision = `error (${consecutiveErrors}/${MAX_CONSECUTIVE_ERRORS}): ${msg}`
       pushEvent({ type: 'error', strategy: 'bid-watcher', timestamp: new Date().toISOString(), message: `[bid] Error: ${msg}` })
       if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
-        state.watcher.status = 'failed'
-        state.watcher.stopReason = `${MAX_CONSECUTIVE_ERRORS} consecutive errors`
-        _stopWatcher()
+        consecutiveErrors = 0
+        pushEvent({ type: 'error', strategy: 'bid-watcher', timestamp: new Date().toISOString(), message: `[bid] ${MAX_CONSECUTIVE_ERRORS} consecutive errors, still watching` })
       }
     } finally {
       inFlight = false
