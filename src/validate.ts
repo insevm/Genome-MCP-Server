@@ -24,7 +24,10 @@ export function sanitizeRpcError(err: unknown, rpcUrl: string): string {
   const parts: string[] = []
   let current: unknown = err
   while (current instanceof Error) {
-    parts.push(current.message)
+    // Take only the first line — viem appends URL/body/docs after a blank line
+    const firstLine = current.message.split('\n')[0].trim()
+    // Skip duplicate adjacent messages (viem retries produce identical cause chains)
+    if (firstLine && firstLine !== parts[parts.length - 1]) parts.push(firstLine)
     current = (current as NodeJS.ErrnoException & { cause?: unknown }).cause
   }
   if (typeof current === 'string') {

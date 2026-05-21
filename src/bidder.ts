@@ -285,6 +285,8 @@ export function startBidWatcher(cfg: BidWatcherConfig): { ok: boolean; message: 
   state.watcher.stoppedAt = undefined
 
   let inFlight = false
+  let consecutiveErrors = 0
+  const MAX_CONSECUTIVE_ERRORS = 5
 
   const onBlock = async () => {
     if (!state.watcher.active || !state.appConfig) return
@@ -296,6 +298,7 @@ export function startBidWatcher(cfg: BidWatcherConfig): { ok: boolean; message: 
     try {
       const checkedAt = new Date().toISOString()
       const status = await getAuctionStatus(state.appConfig, state.appConfig.walletAddress)
+      consecutiveErrors = 0
       state.watcher.lastCheckedAt = checkedAt
       state.watcher.lastObservedAuction = status
       state.watcher.lastError = undefined
@@ -338,12 +341,15 @@ export function startBidWatcher(cfg: BidWatcherConfig): { ok: boolean; message: 
 
     } catch (err) {
       const msg = sanitizeRpcError(err, config.rpcHttpUrl)
-      state.watcher.status = 'failed'
+      consecutiveErrors++
       state.watcher.lastError = msg
-      state.watcher.lastDecision = `error: ${msg}`
-      state.watcher.stopReason = 'runtime error'
+      state.watcher.lastDecision = `error (${consecutiveErrors}/${MAX_CONSECUTIVE_ERRORS}): ${msg}`
       pushEvent({ type: 'error', strategy: 'bid-watcher', timestamp: new Date().toISOString(), message: `[bid] Error: ${msg}` })
-      _stopWatcher()
+      if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+        state.watcher.status = 'failed'
+        state.watcher.stopReason = `${MAX_CONSECUTIVE_ERRORS} consecutive errors`
+        _stopWatcher()
+      }
     } finally {
       inFlight = false
     }
