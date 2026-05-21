@@ -12,8 +12,8 @@ import {
 } from 'viem'
 import { mainnet } from 'viem/chains'
 import { privateKeyToAccount, generatePrivateKey } from 'viem/accounts'
-import { GENOME_CONTRACT, GENOME_ABI, FLASHBOTS_RPC } from './config.js'
-import type { Config } from './types.js'
+import { GENOME_CONTRACT, GENOME_ABI, FLASHBOTS_RPC, BLOCK_PER_MINT } from './config.js'
+import type { Config, WatcherTick } from './types.js'
 
 export function generateWalletKey(): Hex {
   return generatePrivateKey()
@@ -57,21 +57,20 @@ export async function sendBid(
   }
   let maxPriorityFeePerGas: bigint | undefined
 
-  if (multiplier > 1 || opts.minPriorityFeeGwei !== undefined) {
+  if (opts.minPriorityFeeGwei !== undefined) {
+    // Fixed priority fee — skip estimateFeesPerGas entirely
+    maxPriorityFeePerGas = parseGwei(opts.minPriorityFeeGwei.toString())
+  } else if (multiplier > 1) {
     const fees = await publicClient.estimateFeesPerGas()
     const multiplierBps = BigInt(Math.round(multiplier * 100))
     maxPriorityFeePerGas = (fees.maxPriorityFeePerGas * multiplierBps) / 100n
-
-    if (opts.minPriorityFeeGwei !== undefined) {
-      const minWei = parseGwei(opts.minPriorityFeeGwei.toString())
-      if (maxPriorityFeePerGas < minWei) maxPriorityFeePerGas = minWei
-    }
   }
 
   const hash = await walletClient.sendTransaction({
     to: GENOME_CONTRACT,
     data: encodeFunctionData({ abi: GENOME_ABI, functionName: 'bidAndMint' }),
     value: parseEther(bidEth),
+    gas: 300_000n,
     ...(maxPriorityFeePerGas !== undefined ? { maxPriorityFeePerGas } : {}),
   })
 
@@ -109,6 +108,57 @@ export async function sendGeneWithdrawal(
       args: [toAddress, parseEther(amountGene)],
     }),
   })
+}
+
+// Lean watcher tick: fetches only winner + minBidToOutbid + blockNumber (3 parallel calls).
+// When deadlineBlock is 0 (first run or round reset), also fetches lastMintBlock to
+// compute the deadline (4 parallel calls). Returns the updated deadlineBlock.
+export async function getWatcherTick(
+  config: Config,
+  walletAddress: string,
+  deadlineBlock: number,
+): Promise<{ tick: WatcherTick; newDeadlineBlock: number }> {
+  const client = makePublicClient(config)
+
+  const base = [
+    client.readContract({ address: GENOME_CONTRACT, abi: GENOME_ABI, functionName: 'winner' }),
+    client.readContract({ address: GENOME_CONTRACT, abi: GENOME_ABI, functionName: 'minBidToOutbid' }),
+    client.getBlockNumber(),
+  ] as const
+
+  if (deadlineBlock === 0) {
+    const [winnerRaw, minBidRaw, blockRaw, lastMintRaw] = await Promise.all([
+      ...base,
+      client.readContract({ address: GENOME_CONTRACT, abi: GENOME_ABI, functionName: 'lastMintBlock' }),
+    ])
+    const winner = winnerRaw as string
+    const cur = Number(blockRaw as bigint)
+    const newDeadlineBlock = Number(lastMintRaw as bigint) + Number(BLOCK_PER_MINT)
+    return {
+      tick: {
+        winner,
+        minBidToOutbid: formatEther(minBidRaw as bigint),
+        currentBlock: cur,
+        blocksRemaining: Math.max(0, newDeadlineBlock - cur),
+        isUserWinning: winner.toLowerCase() === walletAddress.toLowerCase(),
+      },
+      newDeadlineBlock,
+    }
+  }
+
+  const [winnerRaw, minBidRaw, blockRaw] = await Promise.all(base)
+  const winner = winnerRaw as string
+  const cur = Number(blockRaw as bigint)
+  return {
+    tick: {
+      winner,
+      minBidToOutbid: formatEther(minBidRaw as bigint),
+      currentBlock: cur,
+      blocksRemaining: Math.max(0, deadlineBlock - cur),
+      isUserWinning: winner.toLowerCase() === walletAddress.toLowerCase(),
+    },
+    newDeadlineBlock: deadlineBlock,
+  }
 }
 
 export { formatEther, parseEther }

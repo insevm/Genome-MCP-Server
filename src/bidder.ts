@@ -1,10 +1,10 @@
 import { createPublicClient, http, formatEther, parseEther, type Hex } from 'viem'
 import { mainnet } from 'viem/chains'
 import { GENOME_CONTRACT, GENOME_ABI, BLOCK_PER_MINT } from './config.js'
-import { sendBid, makePublicClient } from './wallet.js'
+import { sendBid, makePublicClient, getWatcherTick } from './wallet.js'
 import { appendBidRecord } from './store.js'
 import { sanitizeRpcError } from './validate.js'
-import type { Config, AuctionStatus, BidWatcherConfig, BidWatcherSnapshot, BidRecord, BidEvent } from './types.js'
+import type { Config, AuctionStatus, WatcherTick, BidWatcherConfig, BidWatcherSnapshot, BidRecord, BidEvent } from './types.js'
 
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000'
 let roundMaxExceeded = false
@@ -42,7 +42,7 @@ interface BidderState {
     triggeredAtBlock: number | undefined
     triggeredAt: string | undefined
     lastCheckedAt: string | undefined
-    lastObservedAuction: AuctionStatus | undefined
+    lastObservedAuction: WatcherTick | undefined
     nextBidEth: string | undefined
     lastDecision: string
     stopReason: string | undefined
@@ -146,7 +146,7 @@ export async function getAuctionStatus(
 }
 
 async function tryBid(
-  status: AuctionStatus,
+  status: WatcherTick,
   bidEth: string,
   opts: {
     usePrivateMempool?: boolean
@@ -172,7 +172,6 @@ async function tryBid(
     timestamp: new Date().toISOString(),
     txHash,
     bidEth,
-    tokenId: status.latestTokenId,
     blockNumber: status.currentBlock,
     result: 'pending',
   }
@@ -198,7 +197,7 @@ function _resetForNewRound(): void {
   roundMaxExceeded = false
 }
 
-async function _handleFirstMover(status: AuctionStatus, watchCfg: BidWatcherConfig): Promise<void> {
+async function _handleFirstMover(status: WatcherTick, watchCfg: BidWatcherConfig): Promise<void> {
   const bidEth = applyBuffer(status.minBidToOutbid, watchCfg.bidBuffer, watchCfg.maxEth)
   const txHash = await tryBid(status, bidEth, {
     gasPriorityMultiplier: 1,
@@ -212,8 +211,7 @@ async function _handleFirstMover(status: AuctionStatus, watchCfg: BidWatcherConf
       type: 'bid_placed',
       strategy: 'bid-watcher',
       timestamp: new Date().toISOString(),
-      message: `[bid] First bid ${bidEth} ETH for token #${status.latestTokenId} — tx: ${txHash}`,
-      tokenId: status.latestTokenId,
+      message: `[bid] First bid ${bidEth} ETH — tx: ${txHash}`,
       txHash,
       bidEth,
     })
@@ -221,7 +219,7 @@ async function _handleFirstMover(status: AuctionStatus, watchCfg: BidWatcherConf
 }
 
 async function _handleSnipe(
-  status: AuctionStatus,
+  status: WatcherTick,
   watchCfg: BidWatcherConfig,
   checkedAt: string,
 ): Promise<void> {
@@ -235,7 +233,6 @@ async function _handleSnipe(
         strategy: 'bid-watcher',
         timestamp: new Date().toISOString(),
         message: `[bid] ${msg}`,
-        tokenId: status.latestTokenId,
       })
     }
     return
@@ -263,8 +260,7 @@ async function _handleSnipe(
       type: 'bid_placed',
       strategy: 'bid-watcher',
       timestamp: new Date().toISOString(),
-      message: `[bid] Snipe bid ${bidEth} ETH for token #${status.latestTokenId} — tx: ${txHash}`,
-      tokenId: status.latestTokenId,
+      message: `[bid] Snipe bid ${bidEth} ETH — tx: ${txHash}`,
       txHash,
       bidEth,
     })
@@ -297,6 +293,7 @@ export function startBidWatcher(cfg: BidWatcherConfig): { ok: boolean; message: 
 
   let inFlight = false
   let consecutiveErrors = 0
+  let cachedDeadlineBlock = 0
   const MAX_CONSECUTIVE_ERRORS = 5
 
   const onBlock = async () => {
@@ -308,13 +305,17 @@ export function startBidWatcher(cfg: BidWatcherConfig): { ok: boolean; message: 
 
     try {
       const checkedAt = new Date().toISOString()
-      const status = await getAuctionStatus(state.appConfig, state.appConfig.walletAddress)
+      const { tick: status, newDeadlineBlock } = await getWatcherTick(
+        state.appConfig, state.appConfig.walletAddress, cachedDeadlineBlock,
+      )
+      cachedDeadlineBlock = newDeadlineBlock
       consecutiveErrors = 0
       state.watcher.lastCheckedAt = checkedAt
       state.watcher.lastObservedAuction = status
       state.watcher.lastError = undefined
 
       if (status.blocksRemaining <= 0) {
+        cachedDeadlineBlock = 0
         _resetForNewRound()
         return
       }
@@ -328,7 +329,7 @@ export function startBidWatcher(cfg: BidWatcherConfig): { ok: boolean; message: 
 
       if (status.isUserWinning) {
         state.watcher.status = 'won'
-        state.watcher.lastDecision = `already winning at ${status.topBid} ETH, watching for next round`
+        state.watcher.lastDecision = 'already winning, watching for next round'
         return
       }
 

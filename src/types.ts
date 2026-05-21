@@ -30,7 +30,7 @@ export interface BidRecord {
   timestamp: string
   txHash: string
   bidEth: string
-  tokenId: number
+  tokenId?: number
   blockNumber?: number
   result: 'won' | 'outbid' | 'pending'
 }
@@ -43,6 +43,15 @@ export interface AuctionStatus {
   minBidToOutbid: string
   lastMintBlock: number
   deadlineBlock: number
+  blocksRemaining: number
+  isUserWinning: boolean
+}
+
+// Minimal per-block data fetched by the watcher hot path (2–3 RPC calls).
+export interface WatcherTick {
+  winner: string
+  minBidToOutbid: string
+  currentBlock: number
   blocksRemaining: number
   isUserWinning: boolean
 }
@@ -74,7 +83,7 @@ export interface BidWatcherSnapshot {
   lastError: string | undefined
   stoppedAt: string | undefined
   nextBidEth: string | undefined
-  lastObservedAuction: AuctionStatus | undefined
+  lastObservedAuction: WatcherTick | undefined
   blocksUntilTrigger: number | undefined
   triggerWindowReached: boolean | undefined
 }
