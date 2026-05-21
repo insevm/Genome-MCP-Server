@@ -1,9 +1,19 @@
 import * as readline from 'readline'
+import * as fs from 'fs/promises'
+import { join } from 'path'
+import { homedir } from 'os'
 import { generateWalletKey, getWalletAddress } from './wallet.js'
 import { saveSessionKey, saveConfig } from './store.js'
 import { GENOME_CONTRACT } from './config.js'
 import { validatePositiveDecimal } from './validate.js'
 import type { Config } from './types.js'
+
+const SESSION_KEY_FILE = join(homedir(), '.genome-bid', 'session.key')
+const CONFIG_FILE = join(homedir(), '.genome-bid', 'config.json')
+
+async function fileExists(path: string): Promise<boolean> {
+  try { await fs.access(path); return true } catch { return false }
+}
 
 function prompt(question: string): Promise<string> {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout })
@@ -65,6 +75,33 @@ export async function runSetup(mode: 'setup' | 'renew'): Promise<void> {
   out('║     Genome Auto-Bid MCP — Setup          ║')
   out('╚══════════════════════════════════════════╝\n')
 
+  if (mode === 'setup' && await fileExists(SESSION_KEY_FILE) && await fileExists(CONFIG_FILE)) {
+    out('ERROR: A wallet is already configured.')
+    out('  To replace it, run:  node dist/index.js renew')
+    out('  WARNING: renew generates a new private key — back up the old one first.')
+    process.exit(1)
+  }
+
+  if (mode === 'renew') {
+    let existingWallet = '(unknown)'
+    try {
+      const raw = await fs.readFile(CONFIG_FILE, 'utf8')
+      const cfg = JSON.parse(raw)
+      if (cfg.walletAddress) existingWallet = cfg.walletAddress
+    } catch { /* ignore */ }
+
+    out('⚠️  WARNING: renew will generate a NEW private key.')
+    out(`   Current wallet : ${existingWallet}`)
+    out('   Any ETH in this wallet will become INACCESSIBLE unless you have a backup.')
+    out('')
+    const confirm = await prompt('Type  yes I understand  to continue (anything else aborts): ')
+    if (confirm !== 'yes I understand') {
+      out('Aborted.')
+      process.exit(1)
+    }
+    out('')
+  }
+
   const rpcHttpUrl =
     process.env.GENOME_RPC_HTTP_URL ??
     (await prompt('Enter your Ethereum mainnet HTTP RPC URL (Alchemy/Infura): '))
@@ -124,7 +161,14 @@ export async function runSetup(mode: 'setup' | 'renew'): Promise<void> {
     },
   }
 
-  await saveConfig(config)
+  try {
+    await saveConfig(config)
+  } catch (err) {
+    // Config write failed — remove the orphaned session.key so next `setup` run
+    // is not incorrectly blocked by a half-finished state.
+    await fs.unlink(SESSION_KEY_FILE).catch(() => {})
+    throw err
+  }
 
   out('\n✓ Setup complete!')
   out(`  Wallet address : ${walletAddress}`)

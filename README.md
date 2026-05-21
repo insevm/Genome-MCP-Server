@@ -166,9 +166,12 @@ Steps to follow:
 2. Ask me for: an Ethereum mainnet HTTP RPC URL (required, e.g. from Alchemy or Infura) and an optional WebSocket RPC URL (leave blank to skip)
 3. Ask me to set an encryption password for the wallet key (I need to remember this — it is required every time the MCP server starts)
 4. Run: node dist/index.js setup — enter the RPC URL, WebSocket URL, and password when prompted; record the wallet address it prints
-5. Register the MCP server in my agent config with GENOME_RPC_HTTP_URL, GENOME_RPC_WS_URL (optional), and GENOME_BID_PASSWORD in the env block
-6. Tell me the wallet address so I can send ETH to fund bidding
-7. Restart the agent to load the new config
+5. Immediately back up the key file: copy ~/.genome-bid/session.key to a safe location (e.g. cloud storage or an external drive). This encrypted file is the only copy of the wallet key — if it is lost, any ETH inside becomes permanently inaccessible.
+6. Register the MCP server in my agent config with GENOME_RPC_HTTP_URL, GENOME_RPC_WS_URL (optional), and GENOME_BID_PASSWORD in the env block
+7. Tell me the wallet address so I can send ETH to fund bidding
+8. Restart the agent to load the new config
+
+Important — never run `node dist/index.js setup` again after the initial setup. The server will block it to protect the existing key, but running it could overwrite everything if protections are bypassed. If you ever genuinely need to replace the wallet, use `node dist/index.js renew` instead — it requires manual confirmation and cannot be run non-interactively.
 ```
 
 #### Manual install
