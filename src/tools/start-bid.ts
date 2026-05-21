@@ -5,6 +5,7 @@ import type { BidWatcherConfig } from '../types.js'
 interface StartBidArgs {
   maxEth: string
   triggerBlocks?: number
+  bidBuffer?: number
   gasPriorityMultiplier?: number
   minPriorityFeeGwei?: number
   usePrivateMempool?: boolean
@@ -30,6 +31,13 @@ export async function handleStartBid(args: StartBidArgs): Promise<object> {
   }
 
   if (
+    args.bidBuffer !== undefined &&
+    (!Number.isFinite(args.bidBuffer) || args.bidBuffer < 0 || args.bidBuffer > 1)
+  ) {
+    throw new Error('bidBuffer must be a number between 0 and 1 (e.g. 0.05 for 5%)')
+  }
+
+  if (
     args.gasPriorityMultiplier !== undefined &&
     (!Number.isFinite(args.gasPriorityMultiplier) ||
       args.gasPriorityMultiplier < 1 ||
@@ -51,6 +59,7 @@ export async function handleStartBid(args: StartBidArgs): Promise<object> {
   const watcherConfig: BidWatcherConfig = {
     maxEth: args.maxEth,
     triggerBlocks: args.triggerBlocks ?? bidDefs.triggerBlocks,
+    bidBuffer: args.bidBuffer ?? 0,
     gasPriorityMultiplier: args.gasPriorityMultiplier ?? bidDefs.gasPriorityMultiplier,
     minPriorityFeeGwei: args.minPriorityFeeGwei ?? bidDefs.minPriorityFeeGwei,
     usePrivateMempool: args.usePrivateMempool ?? bidDefs.usePrivateMempool,

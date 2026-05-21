@@ -63,6 +63,7 @@ const TOOLS: Tool[] = [
       properties: {
         maxEth: { type: 'string', description: 'Maximum bid in ETH, e.g. "0.3"' },
         triggerBlocks: { type: 'number', description: 'Enter the bidding window when this many blocks remain before deadline. Default 1.' },
+        bidBuffer: { type: 'number', description: 'Fraction to add on top of minBidToOutbid, e.g. 0.05 bids 5% above the minimum required. Capped at maxEth. Default 0 (bid exactly the minimum).' },
         gasPriorityMultiplier: { type: 'number', description: 'Multiply maxPriorityFeePerGas by this factor for snipe bids. Default 5.0. Range 1–20. Use analyze_auction_history snipeWindowGas to calibrate.' },
         minPriorityFeeGwei: { type: 'number', description: 'Absolute floor for maxPriorityFeePerGas in gwei (snipe bids). Overrides multiplier when higher. Useful when base fee is very low.' },
         usePrivateMempool: { type: 'boolean', description: 'Submit snipe bid via Flashbots Protect instead of the public mempool. Default false.' },

@@ -50,6 +50,7 @@ export interface AuctionStatus {
 export interface BidWatcherConfig {
   maxEth: string
   triggerBlocks: number
+  bidBuffer: number
   gasPriorityMultiplier: number
   minPriorityFeeGwei?: number
   usePrivateMempool: boolean

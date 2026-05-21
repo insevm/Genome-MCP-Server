@@ -7,6 +7,16 @@ import { sanitizeRpcError } from './validate.js'
 import type { Config, AuctionStatus, BidWatcherConfig, BidWatcherSnapshot, BidRecord, BidEvent } from './types.js'
 
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000'
+
+// Apply bidBuffer on top of minBidToOutbid, capped at maxEth.
+function applyBuffer(minBidEth: string, bidBuffer: number, maxEth: string): string {
+  if (!bidBuffer) return minBidEth
+  const minWei = parseEther(minBidEth)
+  const bps = BigInt(Math.round(bidBuffer * 10_000))
+  const bufferedWei = minWei + (minWei * bps) / 10_000n
+  const maxWei = parseEther(maxEth)
+  return formatEther(bufferedWei > maxWei ? maxWei : bufferedWei)
+}
 const EVENT_QUEUE_MAX = 100
 
 const _eventQueue: BidEvent[] = []
@@ -187,22 +197,23 @@ function _resetForNewRound(): void {
 }
 
 async function _handleFirstMover(status: AuctionStatus, watchCfg: BidWatcherConfig): Promise<void> {
-  const txHash = await tryBid(status, status.minBidToOutbid, {
+  const bidEth = applyBuffer(status.minBidToOutbid, watchCfg.bidBuffer, watchCfg.maxEth)
+  const txHash = await tryBid(status, bidEth, {
     gasPriorityMultiplier: 1,
     dryRun: watchCfg.dryRun,
   })
   state.watcher.firstBidTxHash = txHash
   state.watcher.status = 'first_bid_placed'
-  state.watcher.lastDecision = `entered at ${status.minBidToOutbid} ETH (no competition)`
+  state.watcher.lastDecision = `entered at ${bidEth} ETH (no competition)`
   if (!watchCfg.dryRun) {
     pushEvent({
       type: 'bid_placed',
       strategy: 'bid-watcher',
       timestamp: new Date().toISOString(),
-      message: `[bid] First bid ${status.minBidToOutbid} ETH for token #${status.latestTokenId} — tx: ${txHash}`,
+      message: `[bid] First bid ${bidEth} ETH for token #${status.latestTokenId} — tx: ${txHash}`,
       tokenId: status.latestTokenId,
       txHash,
-      bidEth: status.minBidToOutbid,
+      bidEth,
     })
   }
 }
@@ -212,8 +223,7 @@ async function _handleSnipe(
   watchCfg: BidWatcherConfig,
   checkedAt: string,
 ): Promise<void> {
-  const newBidWei = parseEther(status.minBidToOutbid)
-  if (newBidWei > parseEther(watchCfg.maxEth)) {
+  if (parseEther(status.minBidToOutbid) > parseEther(watchCfg.maxEth)) {
     const msg = `next bid ${status.minBidToOutbid} ETH exceeds max ${watchCfg.maxEth} ETH`
     state.watcher.status = 'failed'
     state.watcher.lastDecision = msg
@@ -229,11 +239,12 @@ async function _handleSnipe(
     return
   }
 
+  const bidEth = applyBuffer(status.minBidToOutbid, watchCfg.bidBuffer, watchCfg.maxEth)
   state.watcher.triggeredAtBlock = status.currentBlock
   state.watcher.triggeredAt = checkedAt
-  state.watcher.lastDecision = `submitting snipe bid ${status.minBidToOutbid} ETH`
+  state.watcher.lastDecision = `submitting snipe bid ${bidEth} ETH`
 
-  const txHash = await tryBid(status, status.minBidToOutbid, {
+  const txHash = await tryBid(status, bidEth, {
     usePrivateMempool: watchCfg.usePrivateMempool,
     gasPriorityMultiplier: watchCfg.gasPriorityMultiplier,
     minPriorityFeeGwei: watchCfg.minPriorityFeeGwei,
@@ -243,7 +254,7 @@ async function _handleSnipe(
   // Set status AFTER the tx resolves so observers never see 'fired' without a txHash
   state.watcher.status = 'fired'
   state.watcher.txHash = txHash
-  state.watcher.lastDecision = `snipe bid submitted: ${status.minBidToOutbid} ETH tx:${txHash}`
+  state.watcher.lastDecision = `snipe bid submitted: ${bidEth} ETH tx:${txHash}`
   state.watcher.stopReason = 'snipe bid submitted'
 
   if (!watchCfg.dryRun) {
@@ -251,10 +262,10 @@ async function _handleSnipe(
       type: 'bid_placed',
       strategy: 'bid-watcher',
       timestamp: new Date().toISOString(),
-      message: `[bid] Snipe bid ${status.minBidToOutbid} ETH for token #${status.latestTokenId} — tx: ${txHash}`,
+      message: `[bid] Snipe bid ${bidEth} ETH for token #${status.latestTokenId} — tx: ${txHash}`,
       tokenId: status.latestTokenId,
       txHash,
-      bidEth: status.minBidToOutbid,
+      bidEth,
     })
   }
   _stopWatcher()
@@ -366,10 +377,10 @@ export function startBidWatcher(cfg: BidWatcherConfig): { ok: boolean; message: 
       const wsClient = makePublicClient(config)
       let wsUnwatch: (() => void) | null = null
 
-      // Heartbeat: ping every 30s to prevent Alchemy/provider idle-timeout disconnects
+      // Heartbeat: ping every 15s to keep the proxy tunnel alive
       heartbeatId = setInterval(() => {
         wsClient.getBlockNumber().catch(() => {})
-      }, 30_000)
+      }, 15_000)
 
       wsUnwatch = wsClient.watchBlocks({
         onBlock: () => {
