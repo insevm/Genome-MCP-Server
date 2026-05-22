@@ -15,6 +15,11 @@ import { privateKeyToAccount, generatePrivateKey } from 'viem/accounts'
 import { GENOME_CONTRACT, GENOME_ABI, FLASHBOTS_RPC, BLOCK_PER_MINT } from './config.js'
 import type { Config, WatcherTick } from './types.js'
 
+interface PublicClientOptions {
+  preferHttp?: boolean
+  webSocketReconnect?: boolean
+}
+
 export function generateWalletKey(): Hex {
   return generatePrivateKey()
 }
@@ -23,8 +28,11 @@ export function getWalletAddress(privateKey: Hex): Address {
   return privateKeyToAccount(privateKey).address
 }
 
-export function makePublicClient(config: Config) {
-  const transport = config.rpcWsUrl ? webSocket(config.rpcWsUrl) : http(config.rpcHttpUrl)
+export function makePublicClient(config: Config, options: PublicClientOptions = {}) {
+  const useWebSocket = Boolean(config.rpcWsUrl) && !options.preferHttp
+  const transport = useWebSocket
+    ? webSocket(config.rpcWsUrl, { reconnect: options.webSocketReconnect ?? true })
+    : http(config.rpcHttpUrl)
   return createPublicClient({ chain: mainnet, transport })
 }
 
@@ -121,7 +129,7 @@ export async function getWatcherTick(
   walletAddress: string,
   deadlineBlock: number,
 ): Promise<{ tick: WatcherTick; newDeadlineBlock: number }> {
-  const client = makePublicClient(config)
+  const client = makePublicClient(config, { preferHttp: true })
 
   if (deadlineBlock === 0) {
     const [winnerRaw, minBidRaw, blockRaw, lastMintRaw] = await Promise.all([

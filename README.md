@@ -187,6 +187,16 @@ node dist/index.js setup
 
 The wizard asks for your RPC URL, max bid, and an encryption password, then prints a wallet address and a ready-to-paste agent config snippet. Fund the wallet with ETH and restart your agent.
 
+#### Upgrading
+
+To pull the latest version and rebuild:
+
+```bash
+npm run update
+```
+
+Then restart your agent to load the new build.
+
 For full details and security model → see [DEVELOPMENT.md](./DEVELOPMENT.md)
 
 ---

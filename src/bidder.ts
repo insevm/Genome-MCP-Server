@@ -5,6 +5,7 @@ import { sendBid, makePublicClient, getWatcherTick } from './wallet.js'
 import { appendBidRecord } from './store.js'
 import { sanitizeRpcError } from './validate.js'
 import type { Config, AuctionStatus, WatcherTick, BidWatcherConfig, BidWatcherSnapshot, BidRecord, BidEvent } from './types.js'
+import { throttledStderr } from './logger.js'
 
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000'
 let roundMaxExceeded = false
@@ -385,10 +386,15 @@ export function startBidWatcher(cfg: BidWatcherConfig): { ok: boolean; message: 
     let reconnectAttempts = 0
     const MAX_RECONNECT = 3
 
+    // Fix 1: exponential backoff capped at 60 s (was 2s*n linear)
+    const WS_RECONNECT_DELAYS_MS = [5_000, 20_000, 60_000] as const
+
     const startWs = () => {
       if (!state.watcher.active) return
 
-      const wsClient = makePublicClient(config)
+      // Disable viem's internal reconnects here because the watcher owns
+      // retry/backoff/fallback behavior and explicitly closes dead clients.
+      const wsClient = makePublicClient(config, { webSocketReconnect: false })
       let wsUnwatch: (() => void) | null = null
 
       // Heartbeat: ping every 15s to keep the proxy tunnel alive
@@ -412,10 +418,18 @@ export function startBidWatcher(cfg: BidWatcherConfig): { ok: boolean; message: 
           wsUnwatch?.()
           wsUnwatch = null
 
+          // Fix 3: close the underlying socket so viem doesn't accumulate dead connections
+          ;(wsClient.transport as { getRpcClient?: () => Promise<{ close(): void }> })
+            .getRpcClient?.()
+            ?.then((c) => c.close())
+            ?.catch(() => {})
+
           if (reconnectAttempts <= MAX_RECONNECT) {
-            const delay = 2_000 * reconnectAttempts  // 2s, 4s, 6s
+            // Fix 1: use exponential backoff array instead of linear 2s*n
+            const delay = WS_RECONNECT_DELAYS_MS[Math.min(reconnectAttempts - 1, WS_RECONNECT_DELAYS_MS.length - 1)]
             const label = `${reconnectAttempts}/${MAX_RECONNECT}`
-            process.stderr.write(`[genome-bid-mcp] [bid] WebSocket error (${label}), reconnecting in ${delay / 1_000}s: ${errMsg}\n`)
+            // Fix 2: throttle repeated identical error lines (default 60s cooldown)
+            throttledStderr(`[genome-bid-mcp] [bid] WebSocket error (${label}), reconnecting in ${delay / 1_000}s: ${errMsg}\n`)
             state.watcher.lastError = errMsg
             state.watcher.lastDecision = `WebSocket dropped, reconnecting (${label})`
             const timer = setTimeout(startWs, delay)
@@ -423,7 +437,8 @@ export function startBidWatcher(cfg: BidWatcherConfig): { ok: boolean; message: 
           } else {
             reconnectAttempts = 0
             const warnMsg = `WebSocket failed after ${MAX_RECONNECT} retries, falling back to HTTP polling: ${errMsg}`
-            process.stderr.write(`[genome-bid-mcp] [bid] ${warnMsg}\n`)
+            // Fix 2: throttle repeated fallback warnings
+            throttledStderr(`[genome-bid-mcp] [bid] ${warnMsg}\n`)
             state.watcher.lastError = errMsg
             state.watcher.transport = 'http-polling'
             state.watcher.lastDecision = 'WebSocket failed after retries, continuing via HTTP polling'

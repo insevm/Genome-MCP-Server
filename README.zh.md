@@ -187,6 +187,16 @@ node dist/index.js setup
 
 向导会询问 RPC URL、最高出价和加密密码，然后打印钱包地址和可直接粘贴的 Agent 配置片段。向钱包充入 ETH 并重启 Agent 即可。
 
+#### 升级
+
+拉取最新版本并重新构建：
+
+```bash
+npm run update
+```
+
+然后重启 Agent 以加载新版本。
+
 完整细节与安全模型 → 参见 [DEVELOPMENT.md](./DEVELOPMENT.md)
 
 ---
