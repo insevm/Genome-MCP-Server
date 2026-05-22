@@ -8,7 +8,8 @@ import {
 } from '@modelcontextprotocol/sdk/types.js'
 import { configExists, loadConfig, loadSessionKey, setRpcConfig } from './store.js'
 import { sanitizeRpcError } from './validate.js'
-import { initBidder, setNotifyFn } from './bidder.js'
+import { initBidder, setNotifyFn, stopBidWatcher } from './bidder.js'
+import { acquireLock, releaseLock } from './lock.js'
 import { getBidStatus } from './tools/get-bid-status.js'
 import { handlePlaceBid } from './tools/place-bid.js'
 import { handleStartBid } from './tools/start-bid.js'
@@ -191,6 +192,17 @@ const TOOLS: Tool[] = [
 let _privateKey: `0x${string}` | null = null
 
 async function main() {
+  await acquireLock()
+
+  async function cleanup(): Promise<void> {
+    stopBidWatcher()
+    await releaseLock()
+  }
+
+  process.stdin.on('close', async () => { await cleanup(); process.exit(0) })
+  process.on('SIGTERM', async () => { await cleanup(); process.exit(0) })
+  process.on('SIGINT',  async () => { await cleanup(); process.exit(0) })
+
   const rpcHttpUrl = process.env.GENOME_RPC_HTTP_URL
   const rpcWsUrl = process.env.GENOME_RPC_WS_URL
   const password = process.env.GENOME_BID_PASSWORD
