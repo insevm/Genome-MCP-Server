@@ -141,6 +141,30 @@ Beyond answering questions, this skill ships an **MCP server** that lets your ag
 | `withdraw_eth` | Send ETH from the bidding wallet to any address |
 | `withdraw_gene` | Send GENE tokens from the bidding wallet |
 
+### Back Up the Wallet Key
+
+The encrypted key file is the only copy of your bidding wallet. Run this prompt immediately after setup, and again whenever you want a fresh backup.
+
+```
+Back up the Genome bidding wallet key to a folder I will specify.
+
+Steps:
+1. Ask me for the destination folder path.
+2. Verify the source key file exists at its standard location inside the
+   Genome config directory. If it does not exist, stop and report the error.
+3. Check whether the destination folder exists. If it does not, stop and
+   tell me — do not create the folder yourself.
+4. List the files currently in the destination folder and show them to me.
+5. Choose a backup filename that includes today's date and time
+   (e.g. session.key.2024-01-15T10-30-00) so it never collides with
+   an existing file.
+6. Copy the key file to the destination folder using the timestamped filename.
+   Do not overwrite, rename, move, or delete any file that already exists
+   in the destination folder.
+7. Confirm the backup succeeded by showing the full path of the new file
+   and its file size. Do not display the file contents.
+```
+
 ### Sample Agent Prompts
 
 ```
@@ -168,6 +192,114 @@ Rules:
 - Only use place_bid. Do not use start_bid or any sniping mode.
 - Gas strategy must be normal for every bid.
 - Never bid more than the current Uniswap floor price returned by get_floor_price.
+```
+
+### Start the Sniper
+
+Use this prompt to configure and launch the sniper. The agent will walk you through each parameter before starting.
+
+```
+I want to start the Genome auction sniper. Before calling start_sniper,
+ask me for the following parameters one by one, show the default for each,
+and explain the trade-off so I can make an informed decision:
+
+1. maxEth (required)
+   — The maximum bid you are willing to place per auction round.
+   — Rounds where the required bid exceeds this amount are skipped entirely.
+   — No default. Ask me for a value.
+
+2. triggerBlocks (default: 1)
+   — How many blocks before the auction deadline to fire the snipe.
+   — 1 = last possible block (lowest detection risk, highest timing risk).
+   — Higher values give more time for the tx to land but expose your intent earlier.
+
+3. bidBuffer (default: 0)
+   — Extra margin added on top of the minimum required bid, as a fraction.
+   — 0 = bid exactly the minimum. 0.05 = bid 5% above the minimum.
+   — Useful if you want a small cushion against a competing snipe arriving in the same block.
+
+4. gasPriorityMultiplier (default: 5.0, range 1–20)
+   — Multiplier applied to maxPriorityFeePerGas for snipe transactions.
+   — Higher = more likely to land in a congested block, but costs more gas.
+   — Tip: call analyze_auction_history first to check typical snipe-window gas levels.
+
+5. minPriorityFeeGwei (default: none)
+   — Absolute floor for maxPriorityFeePerGas in gwei, regardless of the multiplier.
+   — Only needed when the base fee is very low and the multiplier alone produces
+     an unrealistically small priority fee. Leave blank to skip.
+
+6. usePrivateMempool (default: false)
+   — If true, snipe transactions are routed through Flashbots Protect instead of
+     the public mempool, reducing MEV frontrun risk.
+   — Trade-off: slightly slower inclusion, requires Flashbots RPC availability.
+
+7. dryRun (default: false)
+   — If true, the sniper simulates bids without sending any transactions.
+   — Use this to verify your config before going live.
+
+Once I have confirmed all values, call start_sniper with those parameters
+and report back: sniper status, transport mode (WebSocket or HTTP polling),
+wallet address, and the active configuration.
+```
+
+### Scheduled Auction Status Broadcast (Hermes / External Scheduler)
+
+If your agent framework runs scheduled tasks in a separate process context (e.g. Hermes routines), MCP tool calls from that context cannot reach the sniper running in your main session. Use this prompt instead — it writes a standalone shell script that reads on-chain data directly via RPC, with no dependency on the MCP server process.
+
+```
+Task: Genome Auction Status Broadcast
+Schedule: Every 1 minute
+
+─── SETUP (run once, skip if script already exists) ───────────────────
+
+1. Choose a suitable local path to store the report script. Pick a location
+   that is persistent and writable (e.g. alongside other local tooling
+   scripts you already manage). Record the chosen path — it will be used
+   every minute.
+
+2. Write a shell script to that path. The script must:
+   - Read RPC endpoint and wallet address from the existing Genome MCP
+     server config (check the config file the MCP server uses for its
+     stored settings).
+   - Query the Genome auction contract on-chain directly via RPC —
+     no MCP tools, no MCP server process.
+   - Detect whether the sniper watcher is currently active (check PID
+     file, lock file, or any state file written by the MCP server —
+     choose the most reliable signal available).
+   - Compare the current auction state with the previous run's state
+     (persist state between runs using a local temp file).
+   - Output a single line of JSON to stdout with these fields:
+       changed, token, currentBlock, blocksRemaining, deadlineBlock,
+       topBid, minBid, winner, isWinning, watcherStatus
+   - Exit cleanly with code 0 on success, non-zero on failure.
+
+3. Make the script executable.
+
+─── RECURRING (every minute) ──────────────────────────────────────────
+
+1. Run the report script:
+   bash <chosen-script-path>
+
+2. If the script exits with a non-zero code or produces no output,
+   broadcast: ⚠️ Report script failed — check script at <chosen-script-path>
+   Then stop.
+
+3. Parse the JSON output and broadcast using the format below.
+
+─── BROADCAST FORMAT ──────────────────────────────────────────────────
+
+If watcherStatus indicates the sniper is not running:
+⚠️ Sniper not running
+📊 Token #<token> | <blocksRemaining> blocks left | Top <topBid> ETH | Min <minBid> ETH | Leading: <Yes/No>
+
+If changed is true (or this is the first run):
+<Concise description of what changed — e.g. "New auction started", "Outbid", "New leader detected">
+📊 Token #<token> | <blocksRemaining> blocks left | Top <topBid> ETH | Min <minBid> ETH | Leading: <Yes/No> | Sniper: <watcherStatus>
+
+If changed is false:
+📊 Token #<token> | <blocksRemaining> blocks left | Top <topBid> ETH | Min <minBid> ETH | Leading: <Yes/No> | Sniper: <watcherStatus>
+
+Do not call any MCP tools at any point. All data comes exclusively from the script output.
 ```
 
 ### Install the MCP Server
