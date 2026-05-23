@@ -141,6 +141,55 @@ Beyond answering questions, this skill ships an **MCP server** that lets your ag
 | `withdraw_eth` | Send ETH from the bidding wallet to any address |
 | `withdraw_gene` | Send GENE tokens from the bidding wallet |
 
+### Install the MCP Server
+
+#### Let your agent install it
+
+Copy the prompt below and send it to your AI agent — it will handle the full setup:
+
+```
+Please install the Genome Skill and its MCP server from https://github.com/insevm/Genome-MCP-Server
+
+Steps to follow:
+1. Clone the repo into a suitable local directory, then run: npm install && npm run build
+2. Ask me for: an Ethereum mainnet HTTP RPC URL (required, e.g. from Alchemy or Infura) and an optional WebSocket RPC URL (leave blank to skip)
+3. Ask me to set an encryption password for the wallet key (I need to remember this — it is required every time the MCP server starts)
+4. Run: node dist/index.js setup — enter the RPC URL, WebSocket URL, and password when prompted; record the wallet address it prints
+5. Immediately back up the key file: copy ~/.genome-bid/session.key to a safe location (e.g. cloud storage or an external drive). This encrypted file is the only copy of the wallet key — if it is lost, any ETH inside becomes permanently inaccessible.
+6. Register the MCP server in my agent config with GENOME_RPC_HTTP_URL, GENOME_RPC_WS_URL (optional), and GENOME_BID_PASSWORD in the env block
+7. Tell me the wallet address so I can send ETH to fund bidding
+8. Restart the agent to load the new config
+
+Important — never run `node dist/index.js setup` again after the initial setup. The server will block it to protect the existing key, but running it could overwrite everything if protections are bypassed. If you ever genuinely need to replace the wallet, use `node dist/index.js renew` instead — it requires manual confirmation and cannot be run non-interactively.
+```
+
+#### Manual install
+
+**Prerequisites:** Node.js 20+, Ethereum mainnet RPC (HTTP required, WebSocket recommended for snipe precision)
+
+```bash
+git clone https://github.com/insevm/Genome-MCP-Server.git
+cd Genome-MCP-Server
+npm install && npm run build
+node dist/index.js setup
+```
+
+The wizard asks for your RPC URL, max bid, and an encryption password, then prints a wallet address and a ready-to-paste agent config snippet. Fund the wallet with ETH and restart your agent.
+
+#### Upgrading
+
+To pull the latest version and rebuild:
+
+```bash
+npm run update
+```
+
+Then restart your agent to load the new build.
+
+For full details and security model → see [DEVELOPMENT.md](./DEVELOPMENT.md)
+
+---
+
 ### Back Up the Wallet Key
 
 The encrypted key file is the only copy of your bidding wallet. Run this prompt immediately after setup, and again whenever you want a fresh backup.
@@ -301,53 +350,6 @@ If changed is false:
 
 Do not call any MCP tools at any point. All data comes exclusively from the script output.
 ```
-
-### Install the MCP Server
-
-#### Let your agent install it
-
-Copy the prompt below and send it to your AI agent — it will handle the full setup:
-
-```
-Please install the Genome Skill and its MCP server from https://github.com/insevm/Genome-MCP-Server
-
-Steps to follow:
-1. Clone the repo into a suitable local directory, then run: npm install && npm run build
-2. Ask me for: an Ethereum mainnet HTTP RPC URL (required, e.g. from Alchemy or Infura) and an optional WebSocket RPC URL (leave blank to skip)
-3. Ask me to set an encryption password for the wallet key (I need to remember this — it is required every time the MCP server starts)
-4. Run: node dist/index.js setup — enter the RPC URL, WebSocket URL, and password when prompted; record the wallet address it prints
-5. Immediately back up the key file: copy ~/.genome-bid/session.key to a safe location (e.g. cloud storage or an external drive). This encrypted file is the only copy of the wallet key — if it is lost, any ETH inside becomes permanently inaccessible.
-6. Register the MCP server in my agent config with GENOME_RPC_HTTP_URL, GENOME_RPC_WS_URL (optional), and GENOME_BID_PASSWORD in the env block
-7. Tell me the wallet address so I can send ETH to fund bidding
-8. Restart the agent to load the new config
-
-Important — never run `node dist/index.js setup` again after the initial setup. The server will block it to protect the existing key, but running it could overwrite everything if protections are bypassed. If you ever genuinely need to replace the wallet, use `node dist/index.js renew` instead — it requires manual confirmation and cannot be run non-interactively.
-```
-
-#### Manual install
-
-**Prerequisites:** Node.js 20+, Ethereum mainnet RPC (HTTP required, WebSocket recommended for snipe precision)
-
-```bash
-git clone https://github.com/insevm/Genome-MCP-Server.git
-cd Genome-MCP-Server
-npm install && npm run build
-node dist/index.js setup
-```
-
-The wizard asks for your RPC URL, max bid, and an encryption password, then prints a wallet address and a ready-to-paste agent config snippet. Fund the wallet with ETH and restart your agent.
-
-#### Upgrading
-
-To pull the latest version and rebuild:
-
-```bash
-npm run update
-```
-
-Then restart your agent to load the new build.
-
-For full details and security model → see [DEVELOPMENT.md](./DEVELOPMENT.md)
 
 ---
 

@@ -141,6 +141,55 @@ Genome NFT 上的字母代表什么？
 | `withdraw_eth` | 从竞价钱包向任意地址发送 ETH |
 | `withdraw_gene` | 从竞价钱包发送 GENE 代币 |
 
+### 安装 MCP 服务器
+
+#### 让 Agent 来安装
+
+复制以下提示词发送给你的 AI Agent，它会处理全部安装流程：
+
+```
+Please install the Genome Skill and its MCP server from https://github.com/insevm/Genome-MCP-Server
+
+Steps to follow:
+1. Clone the repo into a suitable local directory, then run: npm install && npm run build
+2. Ask me for: an Ethereum mainnet HTTP RPC URL (required, e.g. from Alchemy or Infura) and an optional WebSocket RPC URL (leave blank to skip)
+3. Ask me to set an encryption password for the wallet key (I need to remember this — it is required every time the MCP server starts)
+4. Run: node dist/index.js setup — enter the RPC URL, WebSocket URL, and password when prompted; record the wallet address it prints
+5. Immediately back up the key file: copy ~/.genome-bid/session.key to a safe location (e.g. cloud storage or an external drive). This encrypted file is the only copy of the wallet key — if it is lost, any ETH inside becomes permanently inaccessible.
+6. Register the MCP server in my agent config with GENOME_RPC_HTTP_URL, GENOME_RPC_WS_URL (optional), and GENOME_BID_PASSWORD in the env block
+7. Tell me the wallet address so I can send ETH to fund bidding
+8. Restart the agent to load the new config
+
+Important — never run `node dist/index.js setup` again after the initial setup. The server will block it to protect the existing key, but running it could overwrite everything if protections are bypassed. If you ever genuinely need to replace the wallet, use `node dist/index.js renew` instead — it requires manual confirmation and cannot be run non-interactively.
+```
+
+#### 手动安装
+
+**前提条件：** Node.js 20+，以太坊主网 RPC（HTTP 必须，WebSocket 可选但推荐以提升狙击精度）
+
+```bash
+git clone https://github.com/insevm/Genome-MCP-Server.git
+cd Genome-MCP-Server
+npm install && npm run build
+node dist/index.js setup
+```
+
+向导会询问 RPC URL、最高出价和加密密码，然后打印钱包地址和可直接粘贴的 Agent 配置片段。向钱包充入 ETH 并重启 Agent 即可。
+
+#### 升级
+
+拉取最新版本并重新构建：
+
+```bash
+npm run update
+```
+
+然后重启 Agent 以加载新版本。
+
+完整细节与安全模型 → 参见 [DEVELOPMENT.md](./DEVELOPMENT.md)
+
+---
+
 ### 备份钱包私钥
 
 加密私钥文件是竞价钱包的唯一副本。建议在完成初始化后立即执行此提示词，此后每次需要刷新备份时同样使用。
@@ -295,53 +344,6 @@ Genome NFT 上的字母代表什么？
 
 任何情况下均不得调用 MCP 工具，所有数据来自脚本输出。
 ```
-
-### 安装 MCP 服务器
-
-#### 让 Agent 来安装
-
-复制以下提示词发送给你的 AI Agent，它会处理全部安装流程：
-
-```
-Please install the Genome Skill and its MCP server from https://github.com/insevm/Genome-MCP-Server
-
-Steps to follow:
-1. Clone the repo into a suitable local directory, then run: npm install && npm run build
-2. Ask me for: an Ethereum mainnet HTTP RPC URL (required, e.g. from Alchemy or Infura) and an optional WebSocket RPC URL (leave blank to skip)
-3. Ask me to set an encryption password for the wallet key (I need to remember this — it is required every time the MCP server starts)
-4. Run: node dist/index.js setup — enter the RPC URL, WebSocket URL, and password when prompted; record the wallet address it prints
-5. Immediately back up the key file: copy ~/.genome-bid/session.key to a safe location (e.g. cloud storage or an external drive). This encrypted file is the only copy of the wallet key — if it is lost, any ETH inside becomes permanently inaccessible.
-6. Register the MCP server in my agent config with GENOME_RPC_HTTP_URL, GENOME_RPC_WS_URL (optional), and GENOME_BID_PASSWORD in the env block
-7. Tell me the wallet address so I can send ETH to fund bidding
-8. Restart the agent to load the new config
-
-Important — never run `node dist/index.js setup` again after the initial setup. The server will block it to protect the existing key, but running it could overwrite everything if protections are bypassed. If you ever genuinely need to replace the wallet, use `node dist/index.js renew` instead — it requires manual confirmation and cannot be run non-interactively.
-```
-
-#### 手动安装
-
-**前提条件：** Node.js 20+，以太坊主网 RPC（HTTP 必须，WebSocket 可选但推荐以提升狙击精度）
-
-```bash
-git clone https://github.com/insevm/Genome-MCP-Server.git
-cd Genome-MCP-Server
-npm install && npm run build
-node dist/index.js setup
-```
-
-向导会询问 RPC URL、最高出价和加密密码，然后打印钱包地址和可直接粘贴的 Agent 配置片段。向钱包充入 ETH 并重启 Agent 即可。
-
-#### 升级
-
-拉取最新版本并重新构建：
-
-```bash
-npm run update
-```
-
-然后重启 Agent 以加载新版本。
-
-完整细节与安全模型 → 参见 [DEVELOPMENT.md](./DEVELOPMENT.md)
 
 ---
 
