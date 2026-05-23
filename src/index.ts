@@ -41,7 +41,7 @@ const TOOLS: Tool[] = [
   {
     name: 'place_bid',
     description:
-      'Submit a single Genome bid with an explicit ETH amount. No monitoring or rebidding is performed. Returns the observed auction snapshot and the current minimum executable bid required for this one-shot transaction.',
+      'Submit a single one-shot Genome bid at an explicit ETH amount — no sniper, no watcher, no automatic rebidding. Use this for manual bids or scripted loops where you control the timing yourself. Returns the auction snapshot and the minimum executable bid at submission time.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -54,42 +54,44 @@ const TOOLS: Tool[] = [
     },
   },
   {
-    name: 'start_bid',
+    name: 'start_sniper',
     description:
-      'Start the unified bid watcher. Two-phase strategy: if no one else has bid when the trigger window opens, enters at the minimum price with normal gas (first-mover); if a competitor is present, fires a snipe bid with aggressive gas at the contract-required minBidToOutbid. ' +
+      'Launch the autonomous sniper — a persistent watcher that fires bids in the final blocks of each auction round. ' +
+      'Snipe strategy: waits until triggerBlocks remain before deadline, then fires with aggressive gas at exactly minBidToOutbid (plus optional buffer). ' +
+      'First-mover fallback: if no competitor has bid when the trigger window opens, enters at the minimum price with normal gas instead of burning aggressive gas unnecessarily. ' +
       'Uses WebSocket block subscription when available, falls back to HTTP polling (3 s interval). ' +
-      'Runs continuously across auction rounds until stop_bid is called. Skips rounds where the required bid exceeds maxEth. Use get_bid_watcher_status to monitor progress.',
+      'Runs continuously across auction rounds until stop_sniper is called. Skips rounds where the required bid exceeds maxEth. Use get_sniper_status to monitor progress.',
     inputSchema: {
       type: 'object',
       properties: {
-        maxEth: { type: 'string', description: 'Maximum bid in ETH, e.g. "0.3"' },
-        triggerBlocks: { type: 'number', description: 'Enter the bidding window when this many blocks remain before deadline. Default 1.' },
-        bidBuffer: { type: 'number', description: 'Fraction to add on top of minBidToOutbid, e.g. 0.05 bids 5% above the minimum required. Capped at maxEth. Default 0 (bid exactly the minimum).' },
+        maxEth: { type: 'string', description: 'Maximum bid in ETH, e.g. "0.3". Rounds where minBidToOutbid exceeds this are skipped.' },
+        triggerBlocks: { type: 'number', description: 'Fire the snipe when this many blocks remain before deadline. Default 1 (last block).' },
+        bidBuffer: { type: 'number', description: 'Fraction to add on top of minBidToOutbid, e.g. 0.05 snipes 5% above the minimum required. Capped at maxEth. Default 0 (exact minimum).' },
         gasPriorityMultiplier: { type: 'number', description: 'Multiply maxPriorityFeePerGas by this factor for snipe bids. Default 5.0. Range 1–20. Use analyze_auction_history snipeWindowGas to calibrate.' },
         minPriorityFeeGwei: { type: 'number', description: 'Absolute floor for maxPriorityFeePerGas in gwei (snipe bids). Overrides multiplier when higher. Useful when base fee is very low.' },
-        usePrivateMempool: { type: 'boolean', description: 'Submit snipe bid via Flashbots Protect instead of the public mempool. Default false.' },
+        usePrivateMempool: { type: 'boolean', description: 'Submit snipe bid via Flashbots Protect instead of the public mempool to avoid MEV frontrun. Default false.' },
         dryRun: { type: 'boolean', description: 'Simulate without sending transactions' },
       },
       required: ['maxEth'],
     },
   },
   {
-    name: 'stop_bid',
-    description: 'Stop the active bid watcher.',
+    name: 'stop_sniper',
+    description: 'Halt the active sniper. Any in-flight snipe completes; no further bids are placed after the current round.',
     inputSchema: { type: 'object', properties: {}, required: [] },
   },
   {
-    name: 'get_bid_watcher_status',
+    name: 'get_sniper_status',
     description:
-      'Inspect the current bid watcher state: active config, transport mode (WebSocket or HTTP polling), latest observed auction snapshot, trigger-window progress, candidate next bid, and any error or stop reason.',
+      'Inspect the current sniper state: active config, transport mode (WebSocket or HTTP polling), latest observed auction snapshot, trigger-window countdown, candidate next snipe bid, and any error or stop reason.',
     inputSchema: { type: 'object', properties: {}, required: [] },
   },
   {
-    name: 'get_bid_events',
+    name: 'get_sniper_events',
     description:
-      'Drain and return all unread bidding events since the last call. ' +
-      'Event types: bid_placed (transaction submitted), max_eth_exceeded (required bid exceeded maxEth limit), error (runtime failure). ' +
-      'The queue is cleared on each call. Poll this tool periodically while the bid watcher is active to stay informed of activity.',
+      'Drain and return all unread sniper events since the last call. ' +
+      'Event types: bid_placed (snipe transaction submitted), max_eth_exceeded (required bid exceeded maxEth limit — round skipped), error (runtime failure). ' +
+      'The queue is cleared on each call. Poll this tool periodically while the sniper is active to stay informed of snipe outcomes.',
     inputSchema: { type: 'object', properties: {}, required: [] },
   },
   {
@@ -263,16 +265,16 @@ async function main() {
           if (!_privateKey) throw new Error('Wallet key not loaded. GENOME_BID_PASSWORD set?')
           result = await handlePlaceBid(args as unknown as Parameters<typeof handlePlaceBid>[0], _privateKey)
           break
-        case 'start_bid':
+        case 'start_sniper':
           result = await handleStartBid(args as unknown as Parameters<typeof handleStartBid>[0])
           break
-        case 'stop_bid':
+        case 'stop_sniper':
           result = handleStopBid()
           break
-        case 'get_bid_watcher_status':
+        case 'get_sniper_status':
           result = handleGetBidWatcher()
           break
-        case 'get_bid_events':
+        case 'get_sniper_events':
           result = handleGetBidEvents()
           break
         case 'get_bid_history':

@@ -127,11 +127,11 @@ Genome NFT 上的字母代表什么？
 | 工具 | 功能 |
 |------|------|
 | `get_bid_status` | 实时拍卖快照：最高出价、剩余区块、当前获胜者 |
-| `place_bid` | 以指定 ETH 金额提交单次出价 |
-| `start_bid` | 统一 Watcher：无竞争时以最低价进入，有竞争者时以激进 gas 狙击 |
-| `stop_bid` | 停止当前竞价 Watcher |
-| `get_bid_watcher_status` | 查看 Watcher 状态、传输模式、触发进度、最近决策 |
-| `get_bid_events` | 拉取所有未读竞价事件（已出价、超出上限、错误） |
+| `place_bid` | 手动单次出价，以指定 ETH 金额提交 —— 无狙击器、无 Watcher |
+| `start_sniper` | 启动自主狙击器：等待最后几个区块触发，以激进 gas 精准狙击；若无竞争者则以最低价进入 |
+| `stop_sniper` | 停止当前狙击器 |
+| `get_sniper_status` | 查看狙击器状态、传输模式、触发窗口倒计时、下次狙击出价预估 |
+| `get_sniper_events` | 拉取所有未读狙击事件（已狙击、本轮跳过、错误） |
 | `get_bid_history` | 本地记录的近期出价历史 |
 | `get_wallet_info` | ETH 余额、GENE 余额、默认设置 |
 | `get_floor_price` | 根据内嵌 GENE 价值估算盈亏平衡出价 |
@@ -145,11 +145,29 @@ Genome NFT 上的字母代表什么？
 
 ```
 当前 Genome 拍卖状态是什么？
-监控拍卖并出价，上限 0.3 ETH —— 无人出价时以最低价进入，有竞争时狙击
+启动狙击器，最高出价 0.3 ETH —— 有竞争时在最后一个区块狙击，无竞争时以最低价进入
 分析最近 10 轮拍卖，展示狙击窗口 gas 统计
 分析这个竞价者：0xABC...
 用 0.1 ETH 在 Uniswap 购买 GENE
 估算当前 Genome 底价
+```
+
+### 自动最低价竞价循环
+
+使用以下 prompt，让 Agent 在每轮拍卖中以最低安全价格自动出价，且不会出超过 Uniswap 卖出价的冤枉钱：
+
+```
+每 20 分钟自动执行一次 Genome 拍卖竞价循环：
+1. 调用 get_floor_price，获取当前 GENE 在 Uniswap 的可卖出价格（保本价）。
+2. 调用 get_bid_status，获取当前拍卖所需的最低出价金额。
+3. 若最低出价 ≤ Uniswap 底价：调用 place_bid，以最低有效金额出价，gas 策略选择 normal。
+4. 若最低出价 > Uniswap 底价：跳过本轮 —— 当前 GENE 价格下出价无利可图。
+5. 等待下一轮拍卖（约 20 分钟 / 104 个区块）后重复，无限循环。
+
+规则：
+- 只使用 place_bid，不使用 start_bid 或任何狙击模式。
+- 每次出价的 gas 策略必须为 normal。
+- 出价金额永远不超过 get_floor_price 返回的当前 Uniswap 底价。
 ```
 
 ### 安装 MCP 服务器

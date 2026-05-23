@@ -127,11 +127,11 @@ Beyond answering questions, this skill ships an **MCP server** that lets your ag
 | Tool | What it does |
 |------|-------------|
 | `get_bid_status` | Live auction snapshot: top bid, blocks remaining, current winner |
-| `place_bid` | Submit a single bid at an exact ETH amount |
-| `start_bid` | Unified watcher: enters at minimum price if no competition, snipes with aggressive gas if a competitor appears |
-| `stop_bid` | Stop the active bid watcher |
-| `get_bid_watcher_status` | Inspect watcher state, transport mode, trigger progress, last decision |
-| `get_bid_events` | Drain all unread bid events (placed, exceeded limit, errors) |
+| `place_bid` | One-shot manual bid at an exact ETH amount — no sniper, no watcher |
+| `start_sniper` | Launch the autonomous sniper: waits until the final blocks, then fires with aggressive gas; falls back to min-price entry if no competitor is present |
+| `stop_sniper` | Halt the active sniper |
+| `get_sniper_status` | Inspect sniper state, transport mode, trigger-window countdown, candidate next snipe |
+| `get_sniper_events` | Drain all unread sniper events (snipe placed, round skipped, errors) |
 | `get_bid_history` | Recent bid submissions recorded locally |
 | `get_wallet_info` | ETH balance, GENE balance, default settings |
 | `get_floor_price` | Estimate break-even bid price from embedded GENE value |
@@ -145,11 +145,29 @@ Beyond answering questions, this skill ships an **MCP server** that lets your ag
 
 ```
 What is the current Genome auction status?
-Watch the auction and bid up to 0.3 ETH — enter at min price if no one is bidding, snipe if there's competition
+Start the sniper with a max bid of 0.3 ETH — snipe in the final block if there's competition, enter at min price if the auction is empty
 Analyze the last 10 auction rounds and show snipe-window gas stats
 Profile this bidder: 0xABC...
 Buy GENE with 0.1 ETH on Uniswap
 Estimate the current Genome floor price
+```
+
+### Automated Minimum-Price Bidding Loop
+
+Run this prompt to let your agent bid every auction cycle at the lowest safe price, never overpaying above what you could recover by selling GENE on Uniswap:
+
+```
+Run an automated bidding loop for Genome auctions every 20 minutes:
+1. Call get_floor_price to get the current GENE sell value on Uniswap (break-even price).
+2. Call get_bid_status to get the minimum bid required for the current auction.
+3. If minimum bid ≤ Uniswap floor price: call place_bid with the minimum valid amount and normal gas strategy.
+4. If minimum bid > Uniswap floor price: skip this round — bidding would not be profitable at current GENE prices.
+5. Wait for the next auction (~20 min / 104 blocks) and repeat indefinitely.
+
+Rules:
+- Only use place_bid. Do not use start_bid or any sniping mode.
+- Gas strategy must be normal for every bid.
+- Never bid more than the current Uniswap floor price returned by get_floor_price.
 ```
 
 ### Install the MCP Server
